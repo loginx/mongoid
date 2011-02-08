@@ -4,7 +4,7 @@ module Mongoid # :nodoc:
     module Referenced #:nodoc:
 
       # This class handles all behaviour for relations that are either
-      # one-to-many or one-to-one, where the foreign key is store on this side
+      # one-to-many or one-to-one, where the foreign key is stored on this side
       # of the relation and the reference is to document(s) in another
       # collection.
       class In < Relations::One
