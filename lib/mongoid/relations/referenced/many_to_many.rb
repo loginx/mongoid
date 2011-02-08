@@ -17,7 +17,7 @@ module Mongoid # :nodoc:
         #   person.addresses.push(address)
         #
         # @example Concat with other documents.
-        #   perosn.addresses.concat([ address_one, address_two ])
+        #   person.addresses.concat([ address_one, address_two ])
         #
         # @param [ Document, Array<Document> ] *args Any number of documents.
         def <<(*args)
@@ -204,7 +204,11 @@ module Mongoid # :nodoc:
         #
         # @return [ Criteria ] A new criteria.
         def criteria
-          metadata.klass.any_in(metadata.inverse_foreign_key => [ base.id ])
+          if metadata.inverse
+            metadata.klass.any_in(metadata.inverse_foreign_key => [ base.id ])
+          else
+            metadata.klass.where(:_id => { "$in" => base.send(metadata.foreign_key) })
+          end
         end
 
         # Dereferences the supplied document from the base of the relation.

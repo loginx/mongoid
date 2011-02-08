@@ -1,5 +1,6 @@
 class Person
   include Mongoid::Document
+  include Mongoid::MultiParameterAttributes
   include Mongoid::Timestamps
   include Mongoid::Versioning
 
@@ -94,6 +95,12 @@ class Person
 
   references_many :drugs, :autosave => true
   references_one :account, :autosave => true
+
+  references_and_referenced_in_many \
+    :administrated_events,
+    :class_name => 'Event',
+    :inverse_of => :administrators,
+    :dependent  => :nullify
 
   def score_with_rescoring=(score)
     @rescored = score.to_i + 20
