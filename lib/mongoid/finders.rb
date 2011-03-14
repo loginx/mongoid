@@ -1,12 +1,15 @@
 # encoding: utf-8
 module Mongoid #:nodoc:
-  module Finders #:nodoc:
+
+  # This module defines the finder methods that hang off the document at the
+  # class level.
+  module Finders
 
     # Delegate to the criteria methods that are natural for creating a new
     # criteria.
     [ :all_in, :any_in, :any_of, :asc, :ascending, :avg, :desc, :descending,
       :excludes, :limit, :max, :min, :not_in, :only, :order_by,
-      :skip, :sum, :where, :update, :update_all, :near ].each do |name|
+      :skip, :sum, :without, :where, :update, :update_all, :near ].each do |name|
       define_method(name) do |*args|
         criteria.send(name, *args)
       end

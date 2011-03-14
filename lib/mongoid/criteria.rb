@@ -1,4 +1,5 @@
 # encoding: utf-8
+require "mongoid/criterion/builder"
 require "mongoid/criterion/creational"
 require "mongoid/criterion/complex"
 require "mongoid/criterion/exclusion"
@@ -25,6 +26,7 @@ module Mongoid #:nodoc:
   # <tt>criteria.execute</tt>
   class Criteria
     include Enumerable
+    include Criterion::Builder
     include Criterion::Creational
     include Criterion::Exclusion
     include Criterion::Inclusion
@@ -38,7 +40,8 @@ module Mongoid #:nodoc:
       :ids,
       :klass,
       :options,
-      :selector
+      :selector,
+      :field_list
 
     delegate \
       :aggregate,
@@ -124,6 +127,20 @@ module Mongoid #:nodoc:
       context.count > 0
     end
 
+    # When freezing a criteria we need to initialize the context first
+    # otherwise the setting of the context on attempted iteration will raise a
+    # runtime error.
+    #
+    # @example Freeze the criteria.
+    #   criteria.freeze
+    #
+    # @return [ Criteria ] The frozen criteria.
+    #
+    # @since 2.0.0
+    def freeze
+      context and super
+    end
+
     # Merges the supplied argument hash into a single criteria
     #
     # Options:
@@ -166,9 +183,15 @@ module Mongoid #:nodoc:
     # <tt>criteria.merge({ :conditions => { :title => "Sir" } })</tt>
     def merge(other)
       clone.tap do |crit|
-        crit.selector.update(other.selector)
-        crit.options.update(other.options)
-        crit.documents = other.documents
+        if other.is_a?(Criteria)
+          crit.selector.update(other.selector)
+          crit.options.update(other.options)
+          crit.documents = other.documents
+        else
+          duped = other.dup
+          crit.selector.update(duped.delete(:conditions) || {})
+          crit.options.update(duped)
+        end
       end
     end
 
@@ -315,7 +338,9 @@ module Mongoid #:nodoc:
     # Example:
     #
     # <tt>criteria.update_selector({ :field => "value" }, "$in")</tt>
-    def update_selector(attributes, operator)
+    #
+    # @param [ Symbol ] combine The operator to use when combining sets.
+    def update_selector(attributes, operator, combine = :+)
       clone.tap do |crit|
         converted = BSON::ObjectId.convert(klass, attributes || {})
         converted.each do |key, value|
@@ -323,7 +348,7 @@ module Mongoid #:nodoc:
             crit.selector[key] = { operator => value }
           else
             if crit.selector[key].has_key?(operator)
-              new_value = crit.selector[key].values.first + value
+              new_value = crit.selector[key].values.first.send(combine, value)
               crit.selector[key] = { operator => new_value }
             else
               crit.selector[key][operator] = value

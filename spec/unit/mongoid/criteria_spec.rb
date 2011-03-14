@@ -273,6 +273,44 @@ describe Mongoid::Criteria do
       end
     end
 
+    describe "#freeze" do
+
+      context "when the context has been initialized" do
+
+        let(:frozen) do
+          described_class.new(Person)
+        end
+
+        before do
+          frozen.context
+          frozen.freeze
+        end
+
+        it "does not raise an error on iteration" do
+          expect {
+            frozen.entries
+          }.to_not raise_error
+        end
+      end
+
+      context "when the context has not been initialized" do
+
+        let(:frozen) do
+          described_class.new(Person)
+        end
+
+        before do
+          frozen.freeze
+        end
+
+        it "does not raise an error on iteration" do
+          expect {
+            frozen.entries
+          }.to_not raise_error
+        end
+      end
+    end
+
     describe "#group" do
 
       before do
@@ -713,6 +751,71 @@ describe Mongoid::Criteria do
         end
       end
     end
+
+    context "with a conditions hash" do
+
+      context "when the other has a selector and options" do
+
+        let(:other) do
+          { :conditions => { :name => "Chloe" }, :sort => [[ :name, :asc ]] }
+        end
+
+        let(:selector) do
+          { :title => "Sir", :name => "Chloe" }
+        end
+
+        let(:options) do
+          { :skip => 40, :sort => [[:name, :asc]] }
+        end
+
+        let(:crit) do
+          criteria.where(:title => "Sir").skip(40)
+        end
+
+        let(:merged) do
+          crit.merge(other)
+        end
+
+        it "merges the selector" do
+          merged.selector.should == selector
+        end
+
+        it "merges the options" do
+          merged.options.should == options
+        end
+      end
+
+      context "when the other has no conditions" do
+
+        let(:other) do
+          { :sort => [[ :name, :asc ]] }
+        end
+
+        let(:selector) do
+          { :title => "Sir" }
+        end
+
+        let(:options) do
+          { :skip => 40, :sort => [[:name, :asc]] }
+        end
+
+        let(:crit) do
+          criteria.where(:title => "Sir").skip(40)
+        end
+
+        let(:merged) do
+          crit.merge(other)
+        end
+
+        it "merges the selector" do
+          merged.selector.should == selector
+        end
+
+        it "merges the options" do
+          merged.options.should == options
+        end
+      end
+    end
   end
 
   describe "#method_missing" do
@@ -886,12 +989,16 @@ describe Mongoid::Criteria do
 
       context "when Person, :conditions => {:id => id}" do
 
+        let(:id) do
+          BSON::ObjectId.new
+        end
+
         let(:crit) do
-          criteria.search(:all, :conditions => { :id => "1234e567" })[1]
+          criteria.search(:all, :conditions => { :id => id })[1]
         end
 
         it "returns a criteria with a selector from the conditions" do
-          crit.selector.should == { :_id => "1234e567" }
+          crit.selector.should == { :_id => id }
         end
 
         it "returns a criteria with klass Person" do
