@@ -4,7 +4,6 @@ require 'mongoid/contexts/enumerable/sort'
 module Mongoid #:nodoc:
   module Contexts #:nodoc:
     class Enumerable
-      include Paging
       include Relations::Embedded::Atomic
 
       attr_accessor :collection, :criteria
@@ -96,7 +95,7 @@ module Mongoid #:nodoc:
       #   context.execute
       #
       # @return [ Array<Document> ] Documents that matched the selector.
-      def execute(paginating = false)
+      def execute
         limit(sort(filter)) || []
       end
 
