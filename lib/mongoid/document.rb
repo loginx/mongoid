@@ -21,7 +21,7 @@ module Mongoid #:nodoc:
     #
     # @return [ Integer ] -1, 0, 1.
     def <=>(other)
-      raw_attributes["_id"].to_s <=> other.raw_attributes["_id"].to_s
+      attributes["_id"].to_s <=> other.attributes["_id"].to_s
     end
 
     # Performs equality checking on the document ids. For more robust
@@ -35,7 +35,7 @@ module Mongoid #:nodoc:
     # @return [ true, false ] True if the ids are equal, false if not.
     def ==(other)
       self.class == other.class &&
-        raw_attributes["_id"] == other.raw_attributes["_id"]
+        attributes["_id"] == other.attributes["_id"]
     end
 
     # Performs class equality checking.
@@ -71,7 +71,7 @@ module Mongoid #:nodoc:
     #
     # @since 2.0.0
     def freeze
-      raw_attributes.freeze
+      attributes.freeze
       self
     end
 
@@ -101,18 +101,6 @@ module Mongoid #:nodoc:
       raw_attributes["_id"].hash
     end
 
-    # Return the attributes hash with indifferent access. Used mostly for
-    # convenience - use +Document#raw_attributes+ where you dont care if the
-    # keys are all strings.
-    #
-    # @example Get the attributes.
-    #   person.attributes
-    #
-    # @return [ HashWithIndifferentAccess ] The attributes.
-    def attributes
-      raw_attributes.with_indifferent_access
-    end
-
     # Generate an id for this +Document+.
     #
     # @example Create the id.
@@ -139,21 +127,11 @@ module Mongoid #:nodoc:
     def initialize(attrs = nil)
       @new_record = true
       @attributes = apply_default_attributes
-      process(attrs) do |document|
+      process(attrs) do
         yield self if block_given?
         identify
       end
       run_callbacks(:initialize) { self }
-    end
-
-    # Return the attributes hash.
-    #
-    # @example Get the untouched attributes.
-    #   person.raw_attributes
-    #
-    # @return [ Hash ] This document's attributes.
-    def raw_attributes
-      @attributes
     end
 
     # Reloads the +Document+ attributes from the database. If the document has
@@ -220,8 +198,8 @@ module Mongoid #:nodoc:
     #
     # @return [ Hash ] A hash of all attributes in the hierarchy.
     def as_document
-      attributes = raw_attributes
-      attributes.tap do |attrs|
+      attribs = attributes
+      attribs.tap do |attrs|
         relations.select { |name, meta| meta.embedded? }.each do |name, meta|
           relation = send(name, false, :continue => false)
           attrs[name] = relation.as_document unless relation.blank?
@@ -244,12 +222,12 @@ module Mongoid #:nodoc:
       unless klass.include?(Mongoid::Document)
         raise ArgumentError, 'A class which includes Mongoid::Document is expected'
       end
-      became = klass.new
-      became.instance_variable_set('@attributes', @attributes)
-      became.instance_variable_set('@errors', @errors)
-      became.instance_variable_set('@new_record', new_record?)
-      became.instance_variable_set('@destroyed', destroyed?)
-      became
+      klass.new.tap do |became|
+        became.instance_variable_set('@attributes', @attributes)
+        became.instance_variable_set('@errors', @errors)
+        became.instance_variable_set('@new_record', new_record?)
+        became.instance_variable_set('@destroyed', destroyed?)
+      end
     end
 
     module ClassMethods #:nodoc:
@@ -279,15 +257,11 @@ module Mongoid #:nodoc:
       # @return [ Document ] A new document.
       def instantiate(attrs = nil)
         attributes = attrs || {}
-        if attributes["_id"]
-          allocate.tap do |doc|
-            doc.instance_variable_set(:@attributes, attributes)
-            doc.send(:apply_default_attributes)
-            doc.setup_modifications
-            doc.run_callbacks(:initialize) { doc }
-          end
-        else
-          new(attrs)
+        allocate.tap do |doc|
+          doc.instance_variable_set(:@attributes, attributes)
+          doc.send(:apply_default_attributes)
+          doc.setup_modifications
+          doc.run_callbacks(:initialize) { doc }
         end
       end
 

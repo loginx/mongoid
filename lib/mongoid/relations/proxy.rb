@@ -31,7 +31,7 @@ module Mongoid # :nodoc:
       def init(base, target, metadata, &block)
         @base, @target, @metadata = base, target, metadata
         block.call if block
-        extend Module.new(&metadata.extension) if metadata.extension?
+        extend metadata.extension if metadata.extension?
       end
 
       protected
@@ -62,7 +62,7 @@ module Mongoid # :nodoc:
       #
       # @since 2.0.0.rc.1
       def instantiated(type = nil)
-        type ? type.instantiate : metadata.klass.instantiate
+        type ? type.new : metadata.klass.new
       end
 
       # Determines if the target been loaded into memory or not.

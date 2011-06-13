@@ -104,7 +104,7 @@ module Mongoid # :nodoc:
         def embeds_one(name, options = {}, &block)
           characterize(name, Embedded::One, options, &block).tap do |meta|
             relate(name, meta)
-            builder(name).creator(name)
+            builder(name, meta).creator(name)
             validates_relation(meta)
           end
         end
@@ -192,6 +192,7 @@ module Mongoid # :nodoc:
           characterize(name, Referenced::ManyToMany, options, &block).tap do |meta|
             relate(name, meta)
             reference(meta)
+            autosave(meta)
             validates_relation(meta)
           end
         end
@@ -219,7 +220,7 @@ module Mongoid # :nodoc:
           characterize(name, Referenced::One, options, &block).tap do |meta|
             relate(name, meta)
             reference(meta)
-            builder(name).creator(name).autosave(meta)
+            builder(name, meta).creator(name).autosave(meta)
             validates_relation(meta)
           end
         end
@@ -263,11 +264,34 @@ module Mongoid # :nodoc:
           Metadata.new(
             options.merge(
               :relation => relation,
-              :extend => block,
+              :extend => create_extension_module(name, &block),
               :inverse_class_name => self.name,
               :name => name
             )
           )
+        end
+
+        # Generate a named extension module suitable for marshaling
+        #
+        # @example Get the module.
+        #   Person.create_extension_module(:posts, &block)
+        #
+        # @param [ Symbol ] name The name of the relation.
+        # @param [ Proc ] block Optional block for defining extensions.
+        #
+        # @return [ Module, nil ] The extension or nil.
+        #
+        # @since 2.0.3
+        def create_extension_module(name, &block)
+          if block
+            extension_module_name = "#{self.to_s.demodulize}#{name.to_s.camelize}RelationExtension"
+
+            silence_warnings do
+              self.const_set(extension_module_name, Module.new(&block))
+            end
+
+            "#{self}::#{extension_module_name}".constantize
+          end
         end
 
         # Defines a field to be used as a foreign key in the relation and

@@ -172,7 +172,7 @@ describe Mongoid::Document do
     end
 
     it "returns the attributes with indifferent access" do
-      person.attributes[:title].should == "Sir"
+      person[:title].should == "Sir"
     end
   end
 
@@ -382,10 +382,6 @@ describe Mongoid::Document do
 
       it "creates a new document" do
         person.should be_a(Person)
-      end
-
-      it "creates an id" do
-        person.id.should be_a(BSON::ObjectId)
       end
     end
   end
