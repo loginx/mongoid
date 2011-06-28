@@ -150,8 +150,8 @@ module Mongoid #:nodoc:
         raise Errors::DocumentNotFound.new(self.class, id) if reloaded.nil?
       end
       @attributes = {}.merge(reloaded || {})
+      changed_attributes.clear
       apply_default_attributes
-      reset_modifications
       tap do
         relations.keys.each do |name|
           if instance_variable_defined?("@#{name}")
@@ -260,7 +260,6 @@ module Mongoid #:nodoc:
         allocate.tap do |doc|
           doc.instance_variable_set(:@attributes, attributes)
           doc.send(:apply_default_attributes)
-          doc.setup_modifications
           doc.run_callbacks(:initialize) { doc }
         end
       end
@@ -272,7 +271,7 @@ module Mongoid #:nodoc:
       #
       # @return [ Array<Class> ] All subclasses of the current document.
       def _types
-        @_type ||= [descendants + [self]].flatten.uniq.map(&:to_s)
+        @_type ||= [descendants + [self]].flatten.uniq.map { |t| t.to_s }
       end
 
       # Set the i18n scope to overwrite ActiveModel.

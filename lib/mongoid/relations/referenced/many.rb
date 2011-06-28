@@ -53,7 +53,7 @@ module Mongoid #:nodoc:
         # @since 2.0.0.rc.1
         def bind(options = {})
           binding.bind(options)
-          target.map(&:save) if base.persisted? && !options[:binding]
+          target.map { |doc| doc.save } if base.persisted? && !options[:binding]
         end
 
         alias :concat :<<
@@ -275,8 +275,8 @@ module Mongoid #:nodoc:
         def unbind(options = {})
           binding.unbind(options)
           unless base.new_record?
-            target.each(&:delete) unless options[:binding]
-            target.each(&:save) if options[:nullify]
+            target.each { |doc| doc.delete } unless options[:binding]
+            target.each { |doc| doc.save } if options[:nullify]
           end
           []
         end
@@ -422,8 +422,8 @@ module Mongoid #:nodoc:
           # @return [ Builder ] A new builder object.
           #
           # @since 2.0.0.rc.1
-          def builder(meta, object)
-            Builders::Referenced::Many.new(meta, object || [])
+          def builder(meta, object, loading = false)
+            Builders::Referenced::Many.new(meta, object || [], loading)
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -511,6 +511,18 @@ module Mongoid #:nodoc:
           # @since 2.0.0.rc.1
           def stores_foreign_key?
             false
+          end
+
+          # Get the valid options allowed with this relation.
+          #
+          # @example Get the valid options.
+          #   Relation.valid_options
+          #
+          # @return [ Array<Symbol> ] The valid options.
+          #
+          # @since 2.1.0
+          def valid_options
+            [ :as, :autosave, :dependent, :foreign_key, :order ]
           end
         end
       end

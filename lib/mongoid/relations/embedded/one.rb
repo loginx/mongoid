@@ -95,8 +95,8 @@ module Mongoid # :nodoc:
           # @return [ Builder ] A newly instantiated builder object.
           #
           # @since 2.0.0.rc.1
-          def builder(meta, object)
-            Builders::Embedded::One.new(meta, object)
+          def builder(meta, object, loading = false)
+            Builders::Embedded::One.new(meta, object, loading)
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -162,6 +162,18 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def stores_foreign_key?
             false
+          end
+
+          # Get the valid options allowed with this relation.
+          #
+          # @example Get the valid options.
+          #   Relation.valid_options
+          #
+          # @return [ Array<Symbol> ] The valid options.
+          #
+          # @since 2.1.0
+          def valid_options
+            [ :as, :cyclic ]
           end
         end
       end

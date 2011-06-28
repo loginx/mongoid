@@ -41,6 +41,7 @@ describe Mongoid::Config do
 
       before do
         described_class.add_language("de")
+        I18n.reload!
         I18n.locale = :de
       end
 
@@ -400,8 +401,8 @@ describe Mongoid::Config do
 
   describe ".reset" do
 
-    it "clears out the settings" do
-      described_class.reset.should == {}
+    it "reverts to the defaults" do
+      described_class.reset.should == described_class.defaults
     end
   end
 end

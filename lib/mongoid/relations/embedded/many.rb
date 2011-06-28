@@ -52,7 +52,7 @@ module Mongoid # :nodoc:
         def bind(options = {})
           binding.bind(options)
           if base.persisted? && !options[:binding]
-            atomically(:$set) { target.each(&:save) }
+            atomically(:$set) { target.each { |doc| doc.save } }
           end
         end
 
@@ -70,6 +70,18 @@ module Mongoid # :nodoc:
         # @since 2.0.0.rc.1
         def bind_one(document, options = {})
           binding.bind_one(document, options)
+        end
+
+        # Is the relation empty?
+        #
+        # @example Is the relation empty??
+        #   person.addresses.blank?
+        #
+        # @return [ true, false ] If the relation is empty or not.
+        #
+        # @since 2.1.0
+        def blank?
+          size == 0
         end
 
         # Clear the relation. Will delete the documents from the db if they are
@@ -94,7 +106,7 @@ module Mongoid # :nodoc:
         # @return [ Integer ] The total number of persisted embedded docs, as
         #   flagged by the #persisted? method.
         def count
-          target.select(&:persisted?).size
+          target.select { |doc| doc.persisted? }.size
         end
 
         # Create a new document in the relation. This is essentially the same
@@ -108,7 +120,7 @@ module Mongoid # :nodoc:
         #
         # @return [ Document ] The newly created document.
         def create(attributes = {}, type = nil, &block)
-          build(attributes, type, &block).tap(&:save)
+          build(attributes, type, &block).tap { |doc| doc.save }
         end
 
         # Create a new document in the relation. This is essentially the same
@@ -125,7 +137,7 @@ module Mongoid # :nodoc:
         #
         # @return [ Document ] The newly created document.
         def create!(attributes = {}, type = nil, &block)
-          build(attributes, type, &block).tap(&:save!)
+          build(attributes, type, &block).tap { |doc| doc.save! }
         end
 
         # Delete the supplied document from the target. This method is proxied
@@ -265,9 +277,9 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def as_document
-          target.inject([]) do |attributes, doc|
-            attributes.tap do |attr|
-              attr << doc.as_document
+          [].tap do |attributes|
+            target.each do |doc|
+              attributes << doc.as_document
             end
           end
         end
@@ -423,8 +435,8 @@ module Mongoid # :nodoc:
           # @return [ Builder ] A newly instantiated builder object.
           #
           # @since 2.0.0.rc.1
-          def builder(meta, object)
-            Builders::Embedded::Many.new(meta, object)
+          def builder(meta, object, loading = false)
+            Builders::Embedded::Many.new(meta, object, loading)
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -490,6 +502,18 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def stores_foreign_key?
             false
+          end
+
+          # Get the valid options allowed with this relation.
+          #
+          # @example Get the valid options.
+          #   Relation.valid_options
+          #
+          # @return [ Array<Symbol> ] The valid options.
+          #
+          # @since 2.1.0
+          def valid_options
+            [ :as, :cyclic, :order, :versioned ]
           end
         end
       end

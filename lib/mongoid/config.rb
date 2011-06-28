@@ -13,8 +13,9 @@ module Mongoid #:nodoc
     extend self
     include ActiveModel::Observing
 
-    attr_accessor :master, :settings
+    attr_accessor :master, :settings, :defaults
     @settings = {}
+    @defaults = {}
 
     # Define a configuration option with a default.
     #
@@ -28,11 +29,21 @@ module Mongoid #:nodoc
     #
     # @since 2.0.0.rc.1
     def option(name, options = {})
-      define_method(name) do
-        settings.has_key?(name) ? settings[name] : options[:default]
-      end
-      define_method("#{name}=") { |value| settings[name] = value }
-      define_method("#{name}?") { send(name) }
+      defaults[name] = settings[name] = options[:default]
+
+      class_eval <<-RUBY
+        def #{name}
+          settings[#{name.inspect}]
+        end
+
+        def #{name}=(value)
+          settings[#{name.inspect}] = value
+        end
+
+        def #{name}?
+          #{name}
+        end
+      RUBY
     end
 
     option :allow_dynamic_fields, :default => true
@@ -125,7 +136,7 @@ module Mongoid #:nodoc
     #
     # @since 2.0.1
     def load!(path)
-      environment = defined?(Rails) ? Rails.env : ENV["RACK_ENV"]
+      environment = defined?(Rails) && Rails.respond_to?(:env) ? Rails.env : ENV["RACK_ENV"]
       settings = YAML.load(ERB.new(File.new(path).read).result)[environment]
       if settings.present?
         from_hash(settings)
@@ -139,7 +150,7 @@ module Mongoid #:nodoc
     #
     # @return [ Logger ] The default Logger instance.
     def default_logger
-      defined?(Rails) ? Rails.logger : ::Logger.new($stdout)
+      defined?(Rails) && Rails.respond_to?(:logger) ? Rails.logger : ::Logger.new($stdout)
     end
 
     # Returns the logger, or defaults to Rails logger or stdout logger.
@@ -253,7 +264,7 @@ module Mongoid #:nodoc
     # @example Reset the configuration options.
     #   config.reset
     def reset
-      settings.clear
+      settings.replace(defaults)
     end
 
     # @deprecated User replica sets instead.

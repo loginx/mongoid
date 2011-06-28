@@ -146,7 +146,7 @@ module Mongoid # :nodoc:
         def initialize(base, target, metadata)
           init(base, target, metadata) do
             unless base.frozen?
-              base.send(metadata.foreign_key_setter, target.map(&:id))
+              base.send(metadata.foreign_key_setter, target.map { |doc| doc.id })
             end
           end
         end
@@ -190,7 +190,7 @@ module Mongoid # :nodoc:
             if new_target
               binding.unbind(options)
               relation.target = new_target.to_a
-              base.send(metadata.foreign_key_setter, new_target.map(&:id))
+              base.send(metadata.foreign_key_setter, new_target.map { |doc| doc.id })
               bind(options)
             else
               relation.target = unbind(options)
@@ -215,7 +215,7 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def unbind(options = {})
-          target.each(&:delete) if base.persisted?
+          target.each { |doc| doc.delete } if base.persisted?
           binding.unbind(options)
           []
         end
@@ -281,7 +281,7 @@ module Mongoid # :nodoc:
           target.delete_if do |doc|
             doc.matches?(cond[:conditions] || {})
           end
-          ids = criteria.merge(cond).only(:_id).map(&:_id)
+          ids = criteria.merge(cond).only(:_id).map { |con| con._id }
           criteria.merge(cond).send(method).tap do
             base.pull_all(metadata.foreign_key, ids)
           end
@@ -302,8 +302,8 @@ module Mongoid # :nodoc:
           # @return [ Builder ] A new builder object.
           #
           # @since 2.0.0.rc.1
-          def builder(meta, object)
-            Builders::Referenced::ManyToMany.new(meta, object)
+          def builder(meta, object, loading = false)
+            Builders::Referenced::ManyToMany.new(meta, object, loading)
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -391,6 +391,18 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def stores_foreign_key?
             true
+          end
+
+          # Get the valid options allowed with this relation.
+          #
+          # @example Get the valid options.
+          #   Relation.valid_options
+          #
+          # @return [ Array<Symbol> ] The valid options.
+          #
+          # @since 2.1.0
+          def valid_options
+            [ :autosave, :dependent, :foreign_key, :index, :order ]
           end
         end
       end
