@@ -94,7 +94,7 @@ module Mongoid #:nodoc:
     def write_attribute(name, value)
       access = name.to_s
       typed_value_for(access, value).tap do |value|
-        attribute_will_change!(access) unless attributes[access] == value
+        attribute_will_change!(access) unless attributes[access] == value || attribute_changed?(access)
         attributes[access] = value
       end
     end
@@ -135,7 +135,8 @@ module Mongoid #:nodoc:
       (@attributes ||= {}).tap do |h|
         defaults.each_pair do |key, val|
           unless h.has_key?(key)
-            h[key] = val.respond_to?(:call) ? typed_value_for(key, val.call) : val
+            h[key] = val.respond_to?(:call) ? typed_value_for(key, val.call) :
+              val.duplicable? ? val.dup : val
           end
         end
       end

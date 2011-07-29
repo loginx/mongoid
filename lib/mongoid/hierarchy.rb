@@ -2,6 +2,7 @@
 module Mongoid #:nodoc
   module Hierarchy #:nodoc
     extend ActiveSupport::Concern
+
     included do
       attr_accessor :_parent
     end
@@ -33,16 +34,18 @@ module Mongoid #:nodoc
       #
       # @return [ Array<Document> ] All child documents in the hierarchy.
       def _children
-        [].tap do |children|
-          relations.each_pair do |name, metadata|
-            if metadata.embedded?
-              child = send(name)
-              child.to_a.each do |doc|
-                children.push(doc).concat(doc._children)
-              end unless child.blank?
+        @_children ||=
+          [].tap do |children|
+            relations.each_pair do |name, metadata|
+              if metadata.embedded?
+                child = send(name)
+                child.to_a.each do |doc|
+                  children.push(doc)
+                  children.concat(doc._children) unless metadata.versioned?
+                end if child
+              end
             end
           end
-        end
       end
 
       # Determines if the document is a subclass of another document.
@@ -66,6 +69,22 @@ module Mongoid #:nodoc
       # @return [ Document ] The parent document.
       def parentize(document)
         self._parent = document
+      end
+
+      # After children are persisted we can call this to move all their changes
+      # and flag them as persisted in one call.
+      #
+      # @example Reset the children.
+      #   document.reset_persisted_children
+      #
+      # @return [ Array<Document> ] The children.
+      #
+      # @since 2.1.0
+      def reset_persisted_children
+        _children.each do |child|
+          child.move_changes
+          child.new_record = false
+        end
       end
 
       # Return the root document in the object graph. If the current document

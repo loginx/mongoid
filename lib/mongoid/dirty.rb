@@ -28,11 +28,17 @@ module Mongoid #:nodoc:
 
     # Call this method after save, so the changes can be properly switched.
     #
+    # This will unset the memoized children array, set new record to
+    # false, set the document as validated, and move the dirty changes.
+    #
     # @example Move the changes to previous.
     #   person.move_changes
+    #
+    # @since 2.1.0
     def move_changes
-      @validated = false
+      @_children = nil
       @previously_changed = changes
+      @validated = false
       changed_attributes.clear
     end
 
@@ -61,10 +67,28 @@ module Mongoid #:nodoc:
     def setters
       {}.tap do |modifications|
         changes.each_pair do |field, changes|
-          key = embedded? ? "#{_position}.#{field}" : field
+          key = embedded? ? "#{atomic_position}.#{field}" : field
           modifications[key] = changes[1]
         end
       end
     end
+
+    private
+
+    # Get the current value for the specified attribute, if the attribute has changed.
+    #
+    # @note This is overriding the AM::Dirty implementation to read from the mongoid 
+    #   attributes hash, which may contain a serialized version of the attributes data. It is
+    #   necessary to read the serialized version as the changed value, to allow updates to
+    #   the MongoDB document to persist correctly. For example, if a DateTime field is updated
+    #   it must be persisted as a UTC Time. 
+    #
+    # @return [ Object ] The current value of the field, or nil if no change made.
+    #
+    # @since 2.1.0
+    def attribute_change(attr)
+      [changed_attributes[attr], attributes[attr]] if attribute_changed?(attr)
+    end
+
   end
 end

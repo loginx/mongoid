@@ -68,8 +68,8 @@ module Mongoid # :nodoc:
         # @since 2.0.0.rc.1
         def nullify
           target.send(metadata.foreign_key_setter, nil)
-          target.send(:remove_instance_variable, "@#{metadata.inverse(target)}")
-          base.send(:remove_instance_variable, "@#{metadata.name}")
+          target.remove_ivar(metadata.inverse(target))
+          base.remove_ivar(metadata.name)
           target.save
         end
 
@@ -201,6 +201,20 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def nested_builder(metadata, attributes, options)
             Builders::NestedAttributes::One.new(metadata, attributes, options)
+          end
+
+          # Get the path calculator for the supplied document.
+          #
+          # @example Get the path calculator.
+          #   Proxy.path(document)
+          #
+          # @param [ Document ] document The document to calculate on.
+          #
+          # @return [ Root ] The root atomic path calculator.
+          #
+          # @since 2.1.0
+          def path(document)
+            Mongoid::Atomic::Paths::Root.new(document)
           end
 
           # Tells the caller if this relation is one that stores the foreign

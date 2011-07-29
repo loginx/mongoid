@@ -88,10 +88,11 @@ module Mongoid #:nodoc
       #
       # @return [ Hash ] The field defaults.
       def defaults
-        {}.tap do |defs|
+        @defaults ||= {}.tap do |defs|
           fields.each_pair do |field_name, field|
-            next if field.default.nil?
-            defs[field_name.to_s] = field.default
+            unless (default = field.default).nil?
+              defs[field_name.to_s] = default
+            end
           end
         end
       end
@@ -179,6 +180,8 @@ module Mongoid #:nodoc
       # @param [ Symbol ] name The name of the field.
       # @param [ Hash ] options The hash of options.
       def add_field(name, options = {})
+        @defaults = nil if @defaults
+
         meth = options.delete(:as) || name
         Mappings.for(
           options[:type], options[:identity]
@@ -186,6 +189,13 @@ module Mongoid #:nodoc
           fields[name] = field
           create_accessors(name, meth, options)
           process_options(field)
+
+          # @todo Durran: Refactor this once we can depend on at least
+          #   ActiveModel greater than 3.0.9. They finally have the ability then
+          #   to add attribute methods one at a time. This code will make class
+          #   load times extremely slow.
+          undefine_attribute_methods
+          define_attribute_methods(fields.keys)
         end
       end
 
@@ -234,7 +244,7 @@ module Mongoid #:nodoc
             define_method(meth) do
               value = read_attribute(name)
               if value.is_a?(Array) || value.is_a?(Hash)
-                changed_attributes[name] = value.clone
+                changed_attributes[name] = value.clone unless attribute_changed?(name)
               end
               value
             end

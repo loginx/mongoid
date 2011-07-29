@@ -8,7 +8,7 @@ module Mongoid #:nodoc:
 
     included do
       cattr_accessor :primary_key, :using_object_ids
-      @using_object_ids = true
+      self.using_object_ids = true
       delegate :primary_key, :using_object_ids?, :to => "self.class"
 
       attr_reader :identifier
@@ -80,7 +80,7 @@ module Mongoid #:nodoc:
       def identity(options = {})
         type = options[:type]
         replace_field("_id", type)
-        @using_object_ids = (type == BSON::ObjectId)
+        self.using_object_ids = (type == BSON::ObjectId)
       end
 
       # Defines the field that will be used for the id of this +Document+. This
@@ -113,7 +113,7 @@ module Mongoid #:nodoc:
       #
       # @since 1.0.0
       def using_object_ids?
-        @using_object_ids
+        using_object_ids
       end
     end
   end

@@ -31,6 +31,8 @@ module Mongoid # :nodoc:
             end
           end
         end
+        alias :concat :<<
+        alias :push :<<
 
         # Binds the base object to the inverse of the relation. This is so we
         # are referenced to the actual objects themselves and dont hit the
@@ -397,7 +399,7 @@ module Mongoid # :nodoc:
           criteria = find(:all, conditions || {})
           criteria.size.tap do
             criteria.each do |doc|
-              target.delete(doc)
+              target.delete_at(target.index(doc))
               doc.send(method, :suppress => true)
             end
             reindex
@@ -489,6 +491,21 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def nested_builder(metadata, attributes, options)
             Builders::NestedAttributes::Many.new(metadata, attributes, options)
+          end
+
+          # Get the path calculator for the supplied document.
+          #
+          # @example Get the path calculator.
+          #   Proxy.path(document)
+          #
+          # @param [ Document ] document The document to calculate on.
+          #
+          # @return [ Mongoid::Atomic::Paths::Embedded::Many ]
+          #   The embedded many atomic path calculator.
+          #
+          # @since 2.1.0
+          def path(document)
+            Mongoid::Atomic::Paths::Embedded::Many.new(document)
           end
 
           # Tells the caller if this relation is one that stores the foreign
