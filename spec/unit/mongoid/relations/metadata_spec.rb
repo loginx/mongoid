@@ -147,6 +147,36 @@ describe Mongoid::Relations::Metadata do
     end
   end
 
+  describe "#destructive?" do
+
+    context "when the relation has a destructive dependent option" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many,
+          :dependent => :destroy
+        )
+      end
+
+      it "returns true" do
+        metadata.should be_destructive
+      end
+    end
+
+    context "when no dependent option" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_destructive
+      end
+    end
+  end
+
   describe "#embedded?" do
 
     context "when the relation is embedded" do
@@ -612,6 +642,21 @@ describe Mongoid::Relations::Metadata do
 
     context "when an inverse relation exists" do
 
+      context "when multiple relations against the same class exist" do
+
+        let(:metadata) do
+          described_class.new(
+            :inverse_class_name => "User",
+            :name => :shop,
+            :relation => Mongoid::Relations::Referenced::One
+          )
+        end
+
+        it "returns the name of the inverse with the matching inverse of" do
+          metadata.inverse.should eq(:user)
+        end
+      end
+
       context "when inverse_of is defined" do
 
         let(:metadata) do
@@ -983,8 +1028,6 @@ describe Mongoid::Relations::Metadata do
     PROPERTIES = [
       "as",
       "cyclic",
-      "inverse_class_name",
-      "inverse_of",
       "name",
       "order"
     ]
