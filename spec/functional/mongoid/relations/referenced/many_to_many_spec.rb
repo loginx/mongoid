@@ -1720,27 +1720,6 @@ describe Mongoid::Relations::Referenced::ManyToMany do
     end
   end
 
-  describe "#respond_to?" do
-
-    let(:person) do
-      Person.new
-    end
-
-    let(:preferences) do
-      person.preferences
-    end
-
-    context "when checking against array methods" do
-
-      [].methods.each do |method|
-
-        it "returns true for #{method}" do
-          preferences.should respond_to(method)
-        end
-      end
-    end
-  end
-
   describe "#sum" do
 
     let(:person) do
@@ -1906,6 +1885,57 @@ describe Mongoid::Relations::Referenced::ManyToMany do
       expect {
         preference.reload
       }.to raise_error(Mongoid::Errors::DocumentNotFound)
+    end
+  end
+
+  context "when reloading the relation" do
+
+    let!(:person) do
+      Person.create(:ssn => "243-41-9678")
+    end
+
+    let!(:preference_one) do
+      Preference.create(:name => "one")
+    end
+
+    let!(:preference_two) do
+      Preference.create(:name => "two")
+    end
+
+    before do
+      person.preferences << preference_one
+    end
+
+    context "when the relation references the same documents" do
+
+      before do
+        Preference.collection.update(
+          { :_id => preference_one.id }, { "$set" => { :name => "reloaded" }}
+        )
+      end
+
+      let(:reloaded) do
+        person.preferences(true)
+      end
+
+      it "reloads the document from the database" do
+        reloaded.first.name.should eq("reloaded")
+      end
+    end
+
+    context "when the relation references different documents" do
+
+      before do
+        person.preferences << preference_two
+      end
+
+      let(:reloaded) do
+        person.preferences(true)
+      end
+
+      it "reloads the new document from the database" do
+        reloaded.should eq([ preference_one, preference_two ])
+      end
     end
   end
 end
