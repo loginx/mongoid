@@ -267,8 +267,10 @@ module Mongoid #:nodoc:
         # @since 2.0.0.rc.1
         def substitute(replacement)
           tap do |proxy|
-            proxy.purge
-            proxy.push(replacement.compact) if replacement
+            if replacement != proxy.in_memory
+              proxy.purge
+              proxy.push(replacement.compact) if replacement
+            end
           end
         end
 
@@ -400,7 +402,7 @@ module Mongoid #:nodoc:
         #
         # @since 2.1.0
         def persistable?
-          base.persisted? && !binding?
+          base.persisted? && !binding? && !building?
         end
 
         # Deletes all related documents from the database given the supplied
@@ -462,6 +464,29 @@ module Mongoid #:nodoc:
           # @since 2.1.0
           def criteria(metadata, object, type = nil)
             metadata.klass.where(metadata.foreign_key => object)
+          end
+
+          # Eager load the relation based on the criteria.
+          #
+          # @example Eager load the criteria.
+          #   Proxy.eager_load(metadata, criteria)
+          #
+          # @param [ Metadata ] metadata The relation metadata.
+          # @param [ Criteria ] criteria The criteria being used.
+          #
+          # @return [ Criteria ] The criteria to eager load the relation.
+          #
+          # @since 2.2.0
+          def eager_load(metadata, criteria)
+            metadata.klass.any_in(
+              metadata.foreign_key =>
+                criteria.only(:_id).map { |doc| doc.id }.uniq
+            ).each do |doc|
+              IdentityMap.set_many(
+                doc,
+                metadata.foreign_key => doc.send(metadata.foreign_key)
+              )
+            end
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -575,6 +600,19 @@ module Mongoid #:nodoc:
           # @since 2.1.0
           def valid_options
             [ :as, :autosave, :dependent, :foreign_key, :order ]
+          end
+
+          # Get the default validation setting for the relation. Determines if
+          # by default a validates associated will occur.
+          #
+          # @example Get the validation default.
+          #   Proxy.validation_default
+          #
+          # @return [ true, false ] The validation default.
+          #
+          # @since 2.1.9
+          def validation_default
+            true
           end
         end
       end

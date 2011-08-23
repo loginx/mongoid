@@ -30,14 +30,14 @@ module Mongoid # :nodoc:
               args.flatten.each do |doc|
                 next unless doc
                 append(doc)
-                if persistable?
+                if persistable? || creating?
                   ids.push(doc.id)
                   doc.save
                 else
                   base.send(metadata.foreign_key).push(doc.id)
                 end
               end
-              if persistable?
+              if persistable? || creating?
                 base.push_all(metadata.foreign_key, ids)
                 base.synced[metadata.foreign_key] = false
               end
@@ -154,27 +154,7 @@ module Mongoid # :nodoc:
         end
         alias :nullify_all :nullify
         alias :clear :nullify
-
-        # Clear the relation. Will delete the documents from the db if they are
-        # already persisted.
-        #
-        # @example Clear the relation.
-        #   person.posts.clear
-        #
-        # @return [ Many ] The relation emptied.
-        #
-        # @since 2.0.0.beta.1
-        def purge
-          criteria.delete_all
-          base.set(
-            metadata.foreign_key,
-            base.send(metadata.foreign_key).clear
-          )
-          target.clear do |doc|
-            unbind_one(doc)
-            doc.destroyed = true
-          end
-        end
+        alias :purge :nullify
 
         private
 
@@ -250,6 +230,24 @@ module Mongoid # :nodoc:
           # @since 2.1.0
           def criteria(metadata, object, type = nil)
             metadata.klass.any_in(:_id => object)
+          end
+
+          # Get the criteria that is used to eager load a relation of this
+          # type.
+          #
+          # @example Get the eager load criteria.
+          #   Proxy.eager_load(metadata, criteria)
+          #
+          # @param [ Metadata ] metadata The relation metadata.
+          # @param [ Criteria ] criteria The criteria being used.
+          #
+          # @return [ Criteria ] The criteria to eager load the relation.
+          #
+          # @since 2.2.0
+          def eager_load(metadata, criteria)
+            raise RuntimeError.new(
+              "Eager loading many-to-many relations is not supported."
+            )
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -363,6 +361,19 @@ module Mongoid # :nodoc:
           # @since 2.1.0
           def valid_options
             [ :autosave, :dependent, :foreign_key, :index, :order ]
+          end
+
+          # Get the default validation setting for the relation. Determines if
+          # by default a validates associated will occur.
+          #
+          # @example Get the validation default.
+          #   Proxy.validation_default
+          #
+          # @return [ true, false ] The validation default.
+          #
+          # @since 2.1.9
+          def validation_default
+            true
           end
         end
       end

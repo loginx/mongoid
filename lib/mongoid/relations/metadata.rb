@@ -178,6 +178,23 @@ module Mongoid # :nodoc:
         !!dependent
       end
 
+      # Get the criteria needed to eager load this relation.
+      #
+      # @example Get the eager loading criteria.
+      #   metadata.eager_load(criteria)
+      #
+      # @param [ Criteria ] criteria The criteria to load from.
+      #
+      # @return [ Criteria ] The eager loading criteria.
+      #
+      # @since 2.2.0
+      def eager_load(criteria)
+        relation.eager_load(
+          self,
+          criteria.clone.tap { |crit| crit.inclusions.clear }
+        )
+      end
+
       # Will determine if the relation is an embedded one or not. Currently
       # only checks against embeds one and many.
       #
@@ -334,7 +351,7 @@ module Mongoid # :nodoc:
       #
       # @since 2.0.0.rc.1
       def inverse(other = nil)
-        return self[:inverse_of] if inverse_of?
+        return self[:inverse_of] if has_key?(:inverse_of)
         return self[:as] || lookup_inverse(other) if polymorphic?
         @inverse ||= (cyclic? ? cyclic_inverse : inverse_relation)
       end
@@ -659,7 +676,11 @@ module Mongoid # :nodoc:
       #
       # @since 2.0.0.rc.1
       def validate?
-        self[:validate] != false
+        unless self[:validate].nil?
+          self[:validate]
+        else
+          self[:validate] = relation.validation_default
+        end
       end
 
       # Is this relation using Mongoid's internal versioning system?

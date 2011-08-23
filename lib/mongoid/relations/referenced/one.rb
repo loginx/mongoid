@@ -122,6 +122,30 @@ module Mongoid # :nodoc:
             metadata.klass.where(metadata.foreign_key => object)
           end
 
+          # Get the criteria that is used to eager load a relation of this
+          # type.
+          #
+          # @example Get the eager load criteria.
+          #   Proxy.eager_load(metadata, criteria)
+          #
+          # @param [ Metadata ] metadata The relation metadata.
+          # @param [ Criteria ] criteria The criteria being used.
+          #
+          # @return [ Criteria ] The criteria to eager load the relation.
+          #
+          # @since 2.2.0
+          def eager_load(metadata, criteria)
+            metadata.klass.any_in(
+              metadata.foreign_key =>
+                criteria.only(:_id).map { |doc| doc.id }.uniq
+            ).each do |doc|
+              IdentityMap.set_one(
+                doc,
+                metadata.foreign_key => doc.send(metadata.foreign_key)
+              )
+            end
+          end
+
           # Returns true if the relation is an embedded one. In this case
           # always false.
           #
@@ -233,6 +257,19 @@ module Mongoid # :nodoc:
           # @since 2.1.0
           def valid_options
             [ :as, :autosave, :dependent, :foreign_key ]
+          end
+
+          # Get the default validation setting for the relation. Determines if
+          # by default a validates associated will occur.
+          #
+          # @example Get the validation default.
+          #   Proxy.validation_default
+          #
+          # @return [ true, false ] The validation default.
+          #
+          # @since 2.1.9
+          def validation_default
+            true
           end
         end
       end

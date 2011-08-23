@@ -819,6 +819,27 @@ describe Mongoid::Relations::Targets::Enumerable do
     end
   end
 
+  describe "#is_a?" do
+
+    let(:enumerable) do
+      described_class.new(Post.all)
+    end
+
+    context "when checking against enumerable" do
+
+      it "returns true" do
+        enumerable.is_a?(::Enumerable).should be_true
+      end
+    end
+
+    context "when checking against array" do
+
+      it "returns true" do
+        enumerable.is_a?(Array).should be_true
+      end
+    end
+  end
+
   describe "#last" do
 
     let(:person) do
@@ -950,6 +971,27 @@ describe Mongoid::Relations::Targets::Enumerable do
         it "returns nil" do
           last.should be_nil
         end
+      end
+    end
+  end
+
+  describe "#kind_of?" do
+
+    let(:enumerable) do
+      described_class.new(Post.all)
+    end
+
+    context "when checking against enumerable" do
+
+      it "returns true" do
+        enumerable.kind_of?(::Enumerable).should be_true
+      end
+    end
+
+    context "when checking against array" do
+
+      it "returns true" do
+        enumerable.kind_of?(Array).should be_true
       end
     end
   end
@@ -1121,6 +1163,37 @@ describe Mongoid::Relations::Targets::Enumerable do
           size.should eq(2)
         end
       end
+    end
+  end
+
+  describe "#to_json" do
+
+    let(:person) do
+      Person.create(:ssn => "422-21-9687")
+    end
+
+    let!(:post) do
+      Post.create(:title => "test", :person_id => person.id)
+    end
+
+    let(:criteria) do
+      Post.where(:person_id => person.id)
+    end
+
+    let!(:enumerable) do
+      described_class.new(criteria)
+    end
+
+    before do
+      enumerable << post
+    end
+
+    let!(:json) do
+      enumerable.to_json
+    end
+
+    it "serializes the enumerable" do
+      json.should include(post.title)
     end
   end
 

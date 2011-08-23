@@ -606,6 +606,67 @@ describe Mongoid::Relations::Referenced::In do
     end
   end
 
+  describe ".eager_load" do
+
+    before do
+      Mongoid.identity_map_enabled = true
+    end
+
+    after do
+      Mongoid.identity_map_enabled = false
+    end
+
+    let!(:person) do
+      Person.create(:ssn => "243-12-5243")
+    end
+
+    let!(:post) do
+      person.posts.create(:title => "testing")
+    end
+
+    let(:metadata) do
+      Post.relations["person"]
+    end
+
+    let(:eager) do
+      described_class.eager_load(metadata, Post.all)
+    end
+
+    let!(:map) do
+      Mongoid::IdentityMap.get(Person, person.id)
+    end
+
+    it "puts the document in the identity map" do
+      map.should eq(person)
+    end
+  end
+
+  context "when the relation is self referencing" do
+
+    let(:game_one) do
+      Game.new(:name => "Diablo")
+    end
+
+    let(:game_two) do
+      Game.new(:name => "Warcraft")
+    end
+
+    context "when setting the parent" do
+
+      before do
+        game_one.parent = game_two
+      end
+
+      it "sets the parent" do
+        game_one.parent.should eq(game_two)
+      end
+
+      it "does not set the parent recursively" do
+        game_two.parent.should be_nil
+      end
+    end
+  end
+
   context "when replacing the relation with another" do
 
     let!(:person) do

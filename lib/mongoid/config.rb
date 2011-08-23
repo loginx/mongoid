@@ -166,7 +166,10 @@ module Mongoid #:nodoc
     #
     # @return [ Logger ] The newly set logger.
     def logger=(logger)
-      @logger = logger
+      case logger
+        when Logger then @logger = logger
+        when false, nil then @logger = nil
+      end
     end
 
     # Purge all data in all collections, including indexes.
@@ -202,7 +205,7 @@ module Mongoid #:nodoc
     # set is not a valid +Mongo::DB+, then an error will be raised.
     #
     # @example Set the master database.
-    #   config.master = Mongo::Connection.db("test")
+    #   config.master = Mongo::Connection.new.db("test")
     #
     # @param [ Mongo::DB ] db The master database.
     #

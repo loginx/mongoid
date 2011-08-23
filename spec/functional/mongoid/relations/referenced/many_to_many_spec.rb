@@ -7,7 +7,8 @@ describe Mongoid::Relations::Referenced::ManyToMany do
   end
 
   before do
-    [ Person, Preference, Event, Tag, UserAccount, Agent, Account ].map(&:delete_all)
+    [ Person, Preference, Event, Tag,
+      UserAccount, Agent, Account, Business, User ].map(&:delete_all)
   end
 
   [ :<<, :push, :concat ].each do |method|
@@ -554,8 +555,8 @@ describe Mongoid::Relations::Referenced::ManyToMany do
             preference.person_ids.should be_empty
           end
 
-          it "deletes the target from the database" do
-            preference.should be_destroyed
+          it "does not delete the target from the database" do
+            preference.should_not be_destroyed
           end
         end
 
@@ -1242,6 +1243,19 @@ describe Mongoid::Relations::Referenced::ManyToMany do
     end
   end
 
+  describe ".eager_load" do
+
+    let(:metadata) do
+      Person.relations["preferences"]
+    end
+
+    it "raises an error" do
+      expect {
+        described_class.eager_load(metadata, Person.all)
+      }.to raise_error
+    end
+  end
+
   describe "#exists?" do
 
     let!(:person) do
@@ -1799,6 +1813,130 @@ describe Mongoid::Relations::Referenced::ManyToMany do
     end
   end
 
+  context "when setting both sides in a single call" do
+
+    context "when the documents are new" do
+
+      let(:user) do
+        User.new(:name => "testing")
+      end
+
+      let(:business) do
+        Business.new(:name => "serious", :owners => [ user ])
+      end
+
+      before do
+        user.businesses = [ business ]
+      end
+
+      it "sets the businesses" do
+        user.businesses.should eq([ business ])
+      end
+
+      it "sets the inverse users" do
+        user.businesses.first.owners.first.should eq(user)
+      end
+
+      it "sets the inverse businesses" do
+        business.owners.should eq([ user ])
+      end
+    end
+
+    context "when one side is persisted" do
+
+      let!(:user) do
+        User.new(:name => "testing")
+      end
+
+      let!(:business) do
+        Business.create(:name => "serious", :owners => [ user ])
+      end
+
+      before do
+        user.businesses = [ business ]
+      end
+
+      it "sets the businesses" do
+        user.businesses.should eq([ business ])
+      end
+
+      it "sets the inverse users" do
+        user.businesses.first.owners.first.should eq(user)
+      end
+
+      it "sets the inverse businesses" do
+        business.owners.should eq([ user ])
+      end
+
+      context "when reloading" do
+
+        before do
+          user.reload
+          business.reload
+        end
+
+        it "persists the businesses" do
+          user.businesses.should eq([ business ])
+        end
+
+        it "persists the inverse users" do
+          user.businesses.first.owners.first.should eq(user)
+        end
+
+        it "persists the inverse businesses" do
+          business.owners.should eq([ user ])
+        end
+      end
+    end
+
+    context "when the documents are persisted" do
+
+      let(:user) do
+        User.create(:name => "tst")
+      end
+
+      let(:business) do
+        Business.create(:name => "srs", :owners => [ user ])
+      end
+
+      before do
+        user.businesses = [ business ]
+      end
+
+      it "sets the businesses" do
+        user.businesses.should eq([ business ])
+      end
+
+      it "sets the inverse users" do
+        user.businesses.first.owners.first.should eq(user)
+      end
+
+      it "sets the inverse businesses" do
+        business.owners.should eq([ user ])
+      end
+
+      context "when reloading" do
+
+        before do
+          user.reload
+          business.reload
+        end
+
+        it "persists the businesses" do
+          user.businesses.should eq([ business ])
+        end
+
+        it "persists the inverse users" do
+          user.businesses.first.owners.first.should eq(user)
+        end
+
+        it "persists the inverse businesses" do
+          business.owners.should eq([ user ])
+        end
+      end
+    end
+  end
+
   context "when binding the relation multiple times" do
 
     let(:person) do
@@ -1881,10 +2019,10 @@ describe Mongoid::Relations::Referenced::ManyToMany do
       person.preference_ids.should be_empty
     end
 
-    it "deletes the target from the database" do
+    it "does not delete the target from the database" do
       expect {
         preference.reload
-      }.to raise_error(Mongoid::Errors::DocumentNotFound)
+      }.not_to raise_error(Mongoid::Errors::DocumentNotFound)
     end
   end
 
