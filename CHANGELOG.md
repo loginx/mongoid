@@ -2,6 +2,18 @@
 
 For instructions on upgrading to newer versions, visit [mongoid.org](http://mongoid.org/docs/upgrading.html).
 
+## 2.2.1
+
+* \#1210, \#517 Allow embedded document relation queries to use dot notation.
+  (Scott Ellard)
+
+* \#1198 Enumerable target should use criteria count if loaded has no docs.
+
+* \#1193 Ensure all floats with n precision of zero get converted to integers
+  if the field is defined as an integer.
+
+### Resolved Issues
+
 ## 2.2.0
 
 ### New Features
