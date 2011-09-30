@@ -35,8 +35,15 @@ For instructions on upgrading to newer versions, visit [mongoid.org](http://mong
 
 ### Resolved Issues
 
+* \#1299 Self referenced documents with versioning no longer fail when inverse_of
+  is not defined on all relations.
+
+* \#1288, \#1289 _id and updated_at should not be part of versioned attributes.
+
 * \#1273 Mongoid.preload_models now checks if preload configuration option is set,
   where Mongoid.load_models always loads everything. (Ryan McGeary)
+
+* \#1166 Don't load config in Railtie if no env variables defined. (Terence Lee)
 
 * \#1052 `alias_attribute` now works again as expected.
 
@@ -50,6 +57,15 @@ For instructions on upgrading to newer versions, visit [mongoid.org](http://mong
 
 * \#730 Existing models that have relations added post persistence of originals
   can now have new relations added with no migrations.
+
+* \#726 Embedded documents with compound keys not validate uniqueness correctly.
+
+* \#582 Cyclic non embedded relations now validate uniqueness correctly.
+
+* \#484 Validates uniqueness with multiple scopes of all types now work properly.
+
+* Deleting versions created with `Mongoid::Versioning` no longer fires off
+  dependent cascading on relations.
 
 ## 2.2.1
 
