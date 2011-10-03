@@ -40,11 +40,12 @@ module Mongoid # :nodoc:
         #   person.people.build(:name => "Bozo")
         #
         # @param [ Hash ] attributes The attributes to build the document with.
+        # @param [ Hash ] options The scoped assignment options.
         # @param [ Class ] type Optional class to build the document with.
         #
         # @return [ Document ] The new document.
-        def build(attributes = {}, type = nil)
-          Factory.build(type || metadata.klass, attributes).tap do |doc|
+        def build(attributes = {}, options = {}, type = nil)
+          Factory.build(type || metadata.klass, attributes, options).tap do |doc|
             doc.identify
             append(doc)
             yield(doc) if block_given?
@@ -86,11 +87,12 @@ module Mongoid # :nodoc:
         #   person.movies.create(:name => "Bozo")
         #
         # @param [ Hash ] attributes The attributes to build the document with.
+        # @param [ Hash ] options The scoped assignment options.
         # @param [ Class ] type Optional class to create the document with.
         #
         # @return [ Document ] The newly created document.
-        def create(attributes = {}, type = nil, &block)
-          build(attributes, type, &block).tap { |doc| doc.save }
+        def create(attributes = {}, options = {}, type = nil, &block)
+          build(attributes, options, type, &block).tap { |doc| doc.save }
         end
 
         # Create a new document in the relation. This is essentially the same
@@ -101,13 +103,14 @@ module Mongoid # :nodoc:
         #   person.addresses.create!(:street => "Unter der Linden")</tt>
         #
         # @param [ Hash ] attributes The attributes to build the document with.
+        # @param [ Hash ] options The scoped assignment options.
         # @param [ Class ] type Optional class to create the document with.
         #
         # @raise [ Errors::Validations ] If a validation error occured.
         #
         # @return [ Document ] The newly created document.
-        def create!(attributes = {}, type = nil, &block)
-          build(attributes, type, &block).tap { |doc| doc.save! }
+        def create!(attributes = {}, options = {}, type = nil, &block)
+          build(attributes, options, type, &block).tap { |doc| doc.save! }
         end
 
         # Delete the supplied document from the target. This method is proxied
@@ -242,6 +245,9 @@ module Mongoid # :nodoc:
                   replacement = Many.builder(metadata, replacement).build
                 end
                 proxy.target = replacement.compact
+                if _assigning?
+                  base.delayed_atomic_sets[metadata.name.to_s] = proxy.as_document
+                end
                 proxy.target.each_with_index do |doc, index|
                   integrate(doc)
                   doc._index = index
@@ -512,7 +518,7 @@ module Mongoid # :nodoc:
           #
           # @since 2.1.0
           def valid_options
-            [ :as, :cyclic, :order, :versioned ]
+            [ :as, :cascade_callbacks, :cyclic, :order, :versioned ]
           end
 
           # Get the default validation setting for the relation. Determines if
