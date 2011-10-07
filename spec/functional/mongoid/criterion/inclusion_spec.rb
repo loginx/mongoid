@@ -418,6 +418,53 @@ describe Mongoid::Criterion::Inclusion do
         Mongoid::IdentityMap[Person][person_two.id].should eq(person_two)
       end
     end
+
+    context "when including multiples in the same criteria" do
+
+      let!(:post_one) do
+        person.posts.create(:title => "one")
+      end
+
+      let!(:post_two) do
+        person.posts.create(:title => "two")
+      end
+
+      let!(:game_one) do
+        person.create_game(:name => "one")
+      end
+
+      let!(:game_two) do
+        person.create_game(:name => "two")
+      end
+
+      before do
+        Mongoid::IdentityMap.clear
+      end
+
+      let!(:criteria) do
+        Person.includes(:posts, :game).entries
+      end
+
+      it "returns the correct documents" do
+        criteria.should eq([ person ])
+      end
+
+      it "inserts the first has many document into the identity map" do
+        Mongoid::IdentityMap[Post][post_one.id].should eq(post_one)
+      end
+
+      it "inserts the second has many document into the identity map" do
+        Mongoid::IdentityMap[Post][post_two.id].should eq(post_two)
+      end
+
+      it "inserts the first has one document into the identity map" do
+        Mongoid::IdentityMap[Game][game_one.id].should eq(game_one)
+      end
+
+      it "inserts the second has one document into the identity map" do
+        Mongoid::IdentityMap[Game][game_two.id].should eq(game_two)
+      end
+    end
   end
 
   describe "#near" do
@@ -466,6 +513,51 @@ describe Mongoid::Criterion::Inclusion do
         :aliases => [ "D", "Durran" ],
         :things => [ { :phone => 'HTC Incredible' } ]
       )
+    end
+
+    context "when passing in a range" do
+
+      let!(:baby) do
+        Person.create(:ssn => "123-12-1212", :dob => Date.new(2011, 1, 1))
+      end
+
+      let!(:adult) do
+        Person.create(:ssn => "124-12-1212", :dob => Date.new(1980, 1, 1))
+      end
+
+      context "when the range matches documents" do
+
+        let(:range) do
+          Date.new(1970, 1, 1)..Date.new(2012, 1, 1)
+        end
+
+        let(:criteria) do
+          Person.where(:dob => range)
+        end
+
+        it "includes the lower range value" do
+          criteria.should include(baby)
+        end
+
+        it "includes the higher range value" do
+          criteria.should include(adult)
+        end
+      end
+
+      context "when the range does not match documents" do
+
+        let(:range) do
+          Date.new(2012, 1, 1)..Date.new(2014, 1, 1)
+        end
+
+        let(:criteria) do
+          Person.where(:dob => range)
+        end
+
+        it "returns an empty result" do
+          criteria.should be_empty
+        end
+      end
     end
 
     context "when searching for localized fields" do
