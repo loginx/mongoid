@@ -3,7 +3,7 @@ require "spec_helper"
 describe Mongoid::Criterion::Inclusion do
 
   before do
-    [ Person, Post, Product, Game, Jar ].each(&:delete_all)
+    [ Account, Person, Post, Product, Game, Jar ].each(&:delete_all)
   end
 
   describe "#all_in" do
@@ -25,6 +25,36 @@ describe Mongoid::Criterion::Inclusion do
   end
 
   describe "#any_in" do
+
+    context "when querying on foreign keys" do
+
+      context "when not using object ids" do
+
+        before(:all) do
+          Person.identity :type => String
+        end
+
+        after(:all) do
+          Person.identity :type => BSON::ObjectId
+        end
+
+        let!(:person) do
+          Person.safely.create!(:ssn => "123-11-1111")
+        end
+
+        let!(:account) do
+          person.safely.create_account(:name => "test")
+        end
+
+        let(:from_db) do
+          Account.any_in(:person_id => [ person.id ])
+        end
+
+        it "returns the correct results" do
+          from_db.should eq([ account ])
+        end
+      end
+    end
 
     context "when chaining after a where" do
 
@@ -379,11 +409,11 @@ describe Mongoid::Criterion::Inclusion do
       end
 
       it "inserts the first document into the identity map" do
-        Mongoid::IdentityMap[Post][post_one.id].should eq(post_one)
+        Mongoid::IdentityMap[Post.collection_name][post_one.id].should eq(post_one)
       end
 
       it "inserts the second document into the identity map" do
-        Mongoid::IdentityMap[Post][post_two.id].should eq(post_two)
+        Mongoid::IdentityMap[Post.collection_name][post_two.id].should eq(post_two)
       end
     end
 
@@ -409,12 +439,12 @@ describe Mongoid::Criterion::Inclusion do
         criteria.should eq([ person ])
       end
 
-      it "inserts the first document into the identity map" do
-        Mongoid::IdentityMap[Game][game_one.id].should eq(game_one)
+      it "deletes the replaced document from the identity map" do
+        Mongoid::IdentityMap[Game.collection_name][game_one.id].should be_nil
       end
 
       it "inserts the second document into the identity map" do
-        Mongoid::IdentityMap[Game][game_two.id].should eq(game_two)
+        Mongoid::IdentityMap[Game.collection_name][game_two.id].should eq(game_two)
       end
     end
 
@@ -445,11 +475,11 @@ describe Mongoid::Criterion::Inclusion do
       end
 
       it "inserts the first document into the identity map" do
-        Mongoid::IdentityMap[Person][person.id].should eq(person)
+        Mongoid::IdentityMap[Person.collection_name][person.id].should eq(person)
       end
 
       it "inserts the second document into the identity map" do
-        Mongoid::IdentityMap[Person][person_two.id].should eq(person_two)
+        Mongoid::IdentityMap[Person.collection_name][person_two.id].should eq(person_two)
       end
     end
 
@@ -484,19 +514,19 @@ describe Mongoid::Criterion::Inclusion do
       end
 
       it "inserts the first has many document into the identity map" do
-        Mongoid::IdentityMap[Post][post_one.id].should eq(post_one)
+        Mongoid::IdentityMap[Post.collection_name][post_one.id].should eq(post_one)
       end
 
       it "inserts the second has many document into the identity map" do
-        Mongoid::IdentityMap[Post][post_two.id].should eq(post_two)
+        Mongoid::IdentityMap[Post.collection_name][post_two.id].should eq(post_two)
       end
 
-      it "inserts the first has one document into the identity map" do
-        Mongoid::IdentityMap[Game][game_one.id].should eq(game_one)
+      it "removes the first has one document from the identity map" do
+        Mongoid::IdentityMap[Game.collection_name][game_one.id].should be_nil
       end
 
       it "inserts the second has one document into the identity map" do
-        Mongoid::IdentityMap[Game][game_two.id].should eq(game_two)
+        Mongoid::IdentityMap[Game.collection_name][game_two.id].should eq(game_two)
       end
     end
   end

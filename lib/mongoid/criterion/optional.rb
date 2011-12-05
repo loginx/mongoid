@@ -16,7 +16,7 @@ module Mongoid #:nodoc:
       def ascending(*fields)
         clone.tap do |crit|
           crit.options[:sort] = [] unless options[:sort] || fields.first.nil?
-          fields.flatten.each { |field| merge_options(crit.options[:sort], [ field, :asc ]) }
+          fields.flatten.each { |field| merge_options(crit.options[:sort], [ localize(field), :asc ]) }
         end
       end
       alias :asc :ascending
@@ -57,7 +57,7 @@ module Mongoid #:nodoc:
       def descending(*fields)
         clone.tap do |crit|
           crit.options[:sort] = [] unless options[:sort] || fields.first.nil?
-          fields.flatten.each { |field| merge_options(crit.options[:sort], [ field, :desc ]) }
+          fields.flatten.each { |field| merge_options(crit.options[:sort], [ localize(field), :desc ]) }
         end
       end
       alias :desc :descending
@@ -89,11 +89,12 @@ module Mongoid #:nodoc:
       #
       # @return [ Criteria ] The cloned criteria.
       def for_ids(*ids)
+        field = klass.fields["_id"]
         ids.flatten!
         if ids.size > 1
-          where(:_id.in => ::BSON::ObjectId.convert(klass, ids))
+          any_in(:_id => ids.map{ |id| field.serialize(id) })
         else
-          where(:_id => ids.first)
+          where(:_id => field.serialize(ids.first))
         end
       end
 
@@ -223,12 +224,12 @@ module Mongoid #:nodoc:
                 "due to the fact that hash doesn't have order this may cause unpredictable results"
           end
           arguments.each_pair do |field, direction|
-            merge_options(crit.options[:sort], [ field, direction ])
+            merge_options(crit.options[:sort], [ localize(field), direction ])
           end
         when Array
-          merge_options(crit.options[:sort],arguments)
+          merge_options(crit.options[:sort], arguments.map{ |field| localize(field) })
         when Complex
-          merge_options(crit.options[:sort], [ arguments.key, arguments.operator.to_sym ])
+          merge_options(crit.options[:sort], [ localize(arguments.key), arguments.operator.to_sym ])
         end
       end
 
@@ -251,6 +252,19 @@ module Mongoid #:nodoc:
         else
           options << new_option.flatten
         end
+      end
+
+      # Check if field is localized and return localized version if it is.
+      #
+      # @example localize
+      #   criteria.localize(:description)
+      #
+      # @param [ <Symbol> ] field to localize
+      def localize(field)
+        if klass.fields[field.to_s].try(:localized?)
+          field = "#{field}.#{::I18n.locale}".to_sym
+        end
+        field
       end
     end
   end

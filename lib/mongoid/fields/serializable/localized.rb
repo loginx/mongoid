@@ -19,7 +19,12 @@ module Mongoid #:nodoc:
         #
         # @since 2.3.0
         def deserialize(object)
-          object[::I18n.locale.to_s]
+          locale = ::I18n.locale
+          if ::I18n.respond_to?(:fallbacks)
+            object[::I18n.fallbacks[locale].map(&:to_s).find{ |loc| object[loc] }]
+          else
+            object[locale.to_s]
+          end
         end
 
         # Convert the provided string into a hash for the locale.
