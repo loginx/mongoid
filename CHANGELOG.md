@@ -40,6 +40,18 @@ For instructions on upgrading to newer versions, visit
 
 ### Resolved Issues
 
+* \#1483 Sending module includes at runtime which add new fields to a parent
+  document, also have the fields added to subclasses.
+
+* \#1481 Fix invalid query when accessing many-to-many relations before
+  defaults are set.
+
+* \#1482 Applying new sorting options does not merge into previously
+  chained criteria. (Gerad Suyderhoud)
+
+* \#1480 Mongoid's internal serialized field types renamespaced to Internal in order
+  to not conflict with ruby core classes in custom serializable types.
+
 * \#1463 Batch insert consumers are now scoped to collection to avoid persistence
   of documents to other collections in callbacks going to the wrong place.
 
@@ -52,7 +64,7 @@ For instructions on upgrading to newer versions, visit
 * \#1455, \#1456 Calling destroy on any document now temporarily marks it as
   flagged for destroy until the operation is complete. (Nader Akhnoukh)
 
-* \#1453 `Model#to_key` should return a value is the document is destroyed.
+* \#1453 `Model#to_key` should return a value when the document is destroyed.
 
 * \#1449 New documents no longer get persisted when replaced on a has one as
   a side effect. (jasonsydes)

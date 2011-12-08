@@ -1,30 +1,30 @@
 # encoding: utf-8
 require "mongoid/fields/mappings"
 require "mongoid/fields/serializable"
-require "mongoid/fields/serializable/timekeeping"
-require "mongoid/fields/serializable/array"
-require "mongoid/fields/serializable/big_decimal"
-require "mongoid/fields/serializable/binary"
-require "mongoid/fields/serializable/boolean"
-require "mongoid/fields/serializable/date"
-require "mongoid/fields/serializable/date_time"
-require "mongoid/fields/serializable/float"
-require "mongoid/fields/serializable/hash"
-require "mongoid/fields/serializable/integer"
-require "mongoid/fields/serializable/bignum"
-require "mongoid/fields/serializable/fixnum"
-require "mongoid/fields/serializable/localized"
-require "mongoid/fields/serializable/nil_class"
-require "mongoid/fields/serializable/object"
-require "mongoid/fields/serializable/object_id"
-require "mongoid/fields/serializable/range"
-require "mongoid/fields/serializable/set"
-require "mongoid/fields/serializable/string"
-require "mongoid/fields/serializable/symbol"
-require "mongoid/fields/serializable/time"
-require "mongoid/fields/serializable/time_with_zone"
-require "mongoid/fields/serializable/foreign_keys/array"
-require "mongoid/fields/serializable/foreign_keys/object"
+require "mongoid/fields/internal/timekeeping"
+require "mongoid/fields/internal/array"
+require "mongoid/fields/internal/big_decimal"
+require "mongoid/fields/internal/binary"
+require "mongoid/fields/internal/boolean"
+require "mongoid/fields/internal/date"
+require "mongoid/fields/internal/date_time"
+require "mongoid/fields/internal/float"
+require "mongoid/fields/internal/hash"
+require "mongoid/fields/internal/integer"
+require "mongoid/fields/internal/bignum"
+require "mongoid/fields/internal/fixnum"
+require "mongoid/fields/internal/localized"
+require "mongoid/fields/internal/nil_class"
+require "mongoid/fields/internal/object"
+require "mongoid/fields/internal/object_id"
+require "mongoid/fields/internal/range"
+require "mongoid/fields/internal/set"
+require "mongoid/fields/internal/string"
+require "mongoid/fields/internal/symbol"
+require "mongoid/fields/internal/time"
+require "mongoid/fields/internal/time_with_zone"
+require "mongoid/fields/internal/foreign_keys/array"
+require "mongoid/fields/internal/foreign_keys/object"
 
 module Mongoid #:nodoc
 
@@ -33,35 +33,17 @@ module Mongoid #:nodoc
     extend ActiveSupport::Concern
 
     included do
+      class_attribute :defaults
+      class_attribute :fields
+
+      self.defaults = []
+      self.fields = {}
+
       field(:_type, :type => String)
       field(:_id, :type => BSON::ObjectId)
 
       alias :id :_id
       alias :id= :_id=
-    end
-
-    # Get the default fields.
-    #
-    # @note Refactored from using delegate for class load performance.
-    #
-    # @example Get the defaults.
-    #   model.defaults
-    #
-    # @return [ Array<String> ] The default field names.
-    def defaults
-      self.class.defaults
-    end
-
-    # Get the document's fields.
-    #
-    # @note Refactored from using delegate for class load performance.
-    #
-    # @example Get the fields.
-    #   model.fields
-    #
-    # @return [ Hash ] The fields.
-    def fields
-      self.class.fields
     end
 
     class << self
@@ -103,28 +85,6 @@ module Mongoid #:nodoc
 
     module ClassMethods #:nodoc
 
-      # Returns the default values for the fields on the document.
-      #
-      # @example Get the defaults.
-      #   Person.defaults
-      #
-      # @return [ Hash ] The field defaults.
-      def defaults
-        @defaults ||= []
-      end
-
-      # Set the defaults for the class.
-      #
-      # @example Set the defaults.
-      #   Person.defaults = defaults
-      #
-      # @param [ Array ] defaults The array of defaults to set.
-      #
-      # @since 2.0.0.rc.6
-      def defaults=(defaults)
-        @defaults = defaults
-      end
-
       # Defines all the fields that are accessible on the Document
       # For each field that is defined, a getter and setter will be
       # added as an instance method to the Document.
@@ -141,32 +101,13 @@ module Mongoid #:nodoc
       #
       # @return [ Field ] The generated field
       def field(name, options = {})
+        named = name.to_s
         check_field_name!(name)
-        add_field(name.to_s, options)
-      end
-
-      # Return the fields for this class.
-      #
-      # @example Get the fields.
-      #   Person.fields
-      #
-      # @return [ Hash ] The fields for this document.
-      #
-      # @since 2.0.0.rc.6
-      def fields
-        @fields ||= {}
-      end
-
-      # Set the fields for the class.
-      #
-      # @example Set the fields.
-      #   Person.fields = fields
-      #
-      # @param [ Hash ] fields The hash of fields to set.
-      #
-      # @since 2.0.0.rc.6
-      def fields=(fields)
-        @fields = fields
+        add_field(named, options).tap do
+          descendants.each do |subclass|
+            subclass.add_field(named, options)
+          end
+        end
       end
 
       # When inheriting, we want to copy the fields from the parent class and
@@ -228,7 +169,7 @@ module Mongoid #:nodoc
       # @param [ Hash ] options The hash of options.
       def add_field(name, options = {})
         meth = options.delete(:as) || name
-        type = options[:localize] ? Fields::Serializable::Localized : options[:type]
+        type = options[:localize] ? Fields::Internal::Localized : options[:type]
         Mappings.for(type, options[:identity]).instantiate(name, options).tap do |field|
           fields[name] = field
           defaults << name unless field.default_val.nil?
