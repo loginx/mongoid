@@ -2,18 +2,23 @@ require "spec_helper"
 
 describe Mongoid::Relations::Builders::Referenced::ManyToMany do
 
+  let(:base) do
+    stub
+  end
+
   describe "#build" do
 
     let(:metadata) do
-      stub(
+      stub_everything(
         :klass => Post,
         :name => :posts,
-        :foreign_key => "post_ids"
+        :foreign_key => "post_ids",
+        :criteria => [ post ]
       )
     end
 
     let(:builder) do
-      described_class.new(metadata, object)
+      described_class.new(base, metadata, object)
     end
 
     context "when provided ids" do
@@ -34,12 +39,42 @@ describe Mongoid::Relations::Builders::Referenced::ManyToMany do
         builder.build
       end
 
-      before do
-        Post.expects(:find).with(object).returns([ post ])
-      end
-
       it "sets the documents" do
         documents.should == [ post ]
+      end
+    end
+
+    context "when order specified" do
+
+      let(:metadata) do
+        stub_everything(
+          :klass => Post,
+          :name => :posts,
+          :foreign_key => "person_id",
+          :inverse_klass => Person,
+          :order => :rating.asc,
+          :criteria => [ post ]
+        )
+      end
+
+      let(:object_id) do
+        BSON::ObjectId.new
+      end
+
+      let(:object) do
+        [ object_id ]
+      end
+
+      let(:post) do
+        stub
+      end
+
+      before do
+        @documents = builder.build
+      end
+
+      it "ordered by specified filed" do
+        @documents.should == [ post ]
       end
     end
 
@@ -49,6 +84,10 @@ describe Mongoid::Relations::Builders::Referenced::ManyToMany do
 
         let(:object) do
           [ Post.new ]
+        end
+
+        let(:post) do
+          stub
         end
 
         let!(:documents) do
@@ -61,6 +100,15 @@ describe Mongoid::Relations::Builders::Referenced::ManyToMany do
       end
 
       context "when the object is nil" do
+
+        let(:metadata) do
+          stub_everything(
+            :klass => Post,
+            :name => :posts,
+            :foreign_key => "post_ids",
+            :criteria => nil
+          )
+        end
 
         let(:object) do
           nil

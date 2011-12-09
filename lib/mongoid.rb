@@ -22,27 +22,18 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 require "delegate"
 require "time"
-require "ostruct"
 require "active_support/core_ext"
 require 'active_support/json'
 require "active_support/inflector"
+require "active_support/lazy_load_hooks"
 require "active_support/time_with_zone"
 require "active_model"
-require "active_model/callbacks"
-require "active_model/conversion"
-require "active_model/errors"
-require "active_model/mass_assignment_security"
-require "active_model/naming"
-require "active_model/serialization"
-require "active_model/translation"
-require "active_model/validator"
-require "active_model/validations"
-require "will_paginate/collection"
 require "mongo"
-require "mongoid/errors"
 require "mongoid/extensions"
-require "mongoid/safe"
-require "mongoid/atomicity"
+require "mongoid/errors"
+require "mongoid/threaded"
+require "mongoid/relations"
+require "mongoid/atomic"
 require "mongoid/attributes"
 require "mongoid/callbacks"
 require "mongoid/collection"
@@ -56,11 +47,11 @@ require "mongoid/default_scope"
 require "mongoid/dirty"
 require "mongoid/extras"
 require "mongoid/factory"
-require "mongoid/field"
 require "mongoid/fields"
 require "mongoid/finders"
 require "mongoid/hierarchy"
 require "mongoid/identity"
+require "mongoid/identity_map"
 require "mongoid/indexes"
 require "mongoid/inspection"
 require "mongoid/javascript"
@@ -68,17 +59,17 @@ require "mongoid/json"
 require "mongoid/keys"
 require "mongoid/logger"
 require "mongoid/matchers"
-require "mongoid/modifiers"
 require "mongoid/multi_parameter_attributes"
 require "mongoid/multi_database"
 require "mongoid/named_scope"
 require "mongoid/nested_attributes"
-require "mongoid/paths"
+require "mongoid/observer"
 require "mongoid/persistence"
-require "mongoid/relations"
+require "mongoid/reloading"
 require "mongoid/safety"
 require "mongoid/scope"
 require "mongoid/serialization"
+require "mongoid/sharding"
 require "mongoid/state"
 require "mongoid/timestamps"
 require "mongoid/validations"
@@ -87,41 +78,61 @@ require "mongoid/components"
 require "mongoid/paranoia"
 require "mongoid/document"
 
-# add railtie
+# If we are using Rails then we will include the Mongoid railtie. This has all
+# the nifty initializers that Mongoid needs.
 if defined?(Rails)
   require "mongoid/railtie"
+end
+
+# If we are using any Rack based application then we need the Mongoid rack
+# middleware to ensure our app is running properly.
+if defined?(Rack)
+  require "rack/mongoid"
 end
 
 # add english load path by default
 I18n.load_path << File.join(File.dirname(__FILE__), "config", "locales", "en.yml")
 
 module Mongoid #:nodoc
+  extend self
 
-  MONGODB_VERSION = "1.6.0"
+  MONGODB_VERSION = "2.0.0"
 
-  class << self
+  # Sets the Mongoid configuration options. Best used by passing a block.
+  #
+  # @example Set up configuration options.
+  #   Mongoid.configure do |config|
+  #     name = "mongoid_test"
+  #     host = "localhost"
+  #     config.allow_dynamic_fields = false
+  #     config.master = Mongo::Connection.new.db(name)
+  #   end
+  #
+  # @return [ Config ] The configuration obejct.
+  #
+  # @since 1.0.0
+  def configure
+    block_given? ? yield(Config) : Config
+  end
+  alias :config :configure
 
-    # Sets the Mongoid configuration options. Best used by passing a block.
-    #
-    # @example Set up configuration options.
-    #
-    #   Mongoid.configure do |config|
-    #     name = "mongoid_test"
-    #     host = "localhost"
-    #     config.allow_dynamic_fields = false
-    #     config.master = Mongo::Connection.new.db(name)
-    #     config.slaves = [
-    #       Mongo::Connection.new(host, 27018, :slave_ok => true).db(name),
-    #       Mongo::Connection.new(host, 27019, :slave_ok => true).db(name)
-    #     ]
-    #   end
-    #
-    # @return [ Config ] The configuration obejct.
-    def configure
-      config = Mongoid::Config
-      block_given? ? yield(config) : config
+  # We can process a unit of work in Mongoid and have the identity map
+  # automatically clear itself out after the work is complete.
+  #
+  # @example Process a unit of work.
+  #   Mongoid.unit_of_work do
+  #     Person.create(:title => "Sir")
+  #   end
+  #
+  # @return [ Object ] The result of the block.
+  #
+  # @since 2.1.0
+  def unit_of_work
+    begin
+      yield if block_given?
+    ensure
+      IdentityMap.clear
     end
-    alias :config :configure
   end
 
   # Take all the public instance methods from the Config singleton and allow
@@ -129,11 +140,9 @@ module Mongoid #:nodoc
   #
   # @example Delegate the configuration methods.
   #   Mongoid.database = Mongo::Connection.new.db("test")
-  Mongoid::Config.public_instance_methods(false).each do |name|
-    (class << self; self; end).class_eval <<-EOT
-      def #{name}(*args)
-        configure.send("#{name}", *args)
-      end
-    EOT
-  end
+  #
+  # @since 1.0.0
+  delegate *(Config.public_instance_methods(false) +
+    ActiveModel::Observing::ClassMethods.public_instance_methods(false) <<
+    { :to => Config })
 end

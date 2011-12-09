@@ -11,10 +11,6 @@ describe Mongoid::Config do
     File.join(File.dirname(__FILE__), "..", "..", "config", "mongoid_with_utc.yml")
   end
 
-  let(:slaves_config) do
-    File.join(File.dirname(__FILE__), "..", "..", "config", "mongoid_with_slaves.yml")
-  end
-
   let(:multi_config) do
     File.join(File.dirname(__FILE__), "..", "..", "config", "mongoid_with_multiple_mongos.yml")
   end
@@ -27,11 +23,14 @@ describe Mongoid::Config do
     File.join(File.dirname(__FILE__), "..", "..", "config", "mongoid.mongohq.yml")
   end
 
+  before(:all) do
+    Mongoid.logger = nil
+  end
+
   after(:all) do
     Mongoid.configure do |config|
       name          = "mongoid_test"
       config.master = Mongo::Connection.new.db(name)
-      config.slaves = []
       config.logger = nil
     end
   end
@@ -42,6 +41,7 @@ describe Mongoid::Config do
 
       before do
         described_class.add_language("de")
+        I18n.reload!
         I18n.locale = :de
       end
 
@@ -59,7 +59,7 @@ describe Mongoid::Config do
   describe ".destructive_fields" do
 
     it "returns a list of method names" do
-      described_class.destructive_fields.should include("process")
+      described_class.destructive_fields.should include(:process)
     end
   end
 
@@ -91,12 +91,12 @@ describe Mongoid::Config do
         described_class.include_root_in_json.should == true
       end
 
-      it "sets reconnect_time" do
-        described_class.reconnect_time.should == 5
-      end
-
       it "sets parameterize keys" do
         described_class.parameterize_keys.should == false
+      end
+
+      it "sets scope_overwrite_exception" do
+        described_class.scope_overwrite_exception.should == false
       end
 
       it "sets persist_in_safe_mode" do
@@ -110,16 +110,9 @@ describe Mongoid::Config do
       it "returns nil, which is interpreted as the local time_zone" do
         described_class.use_utc.should be_false
       end
-    end
 
-    context "when configuring with slaves", :config => :slaves do
-
-      let(:settings) do
-        YAML.load(ERB.new(File.new(slaves_config).read).result)
-      end
-
-      it "sets the slave databases" do
-        described_class.slaves.first.name.should == "mongoid_config_test"
+      it "sets the logger to nil" do
+        described_class.logger.should be_nil
       end
     end
 
@@ -134,7 +127,7 @@ describe Mongoid::Config do
       end
     end
 
-    context "when configuring with multiple databases", :config => :multi do
+    context "when configuring with multiple databases" do
 
       let(:settings) do
         YAML.load(ERB.new(File.new(multi_config).read).result)
@@ -169,34 +162,92 @@ describe Mongoid::Config do
         described_class.master.name.should == "mongoid"
       end
     end
+  end
 
-    context "when configured with replset", :config => :replset_config do
+  describe ".load!" do
 
-      let(:settings) do
-        YAML.load(ERB.new(File.new(replset_config).read).result)
-      end
+    before(:all) do
+      Object.send(:remove_const, :Rails) if defined?(Rails)
+    end
 
-      it "should create a regular Mongo::ReplSetConnection" do
-        described_class.master.connection.should be_a Mongo::ReplSetConnection
-      end
+    before do
+      ENV["RACK_ENV"] = "test"
+      described_class.load!(standard_config)
+    end
+
+    after do
+      described_class.reset
+    end
+
+    it "sets the master db" do
+      described_class.master.name.should == "mongoid_config_test"
+    end
+
+    it "sets allow_dynamic_fields" do
+      described_class.allow_dynamic_fields.should == false
+    end
+
+    it "sets include_root_in_json" do
+      described_class.include_root_in_json.should == true
+    end
+
+    it "sets parameterize keys" do
+      described_class.parameterize_keys.should == false
+    end
+
+    it "sets scope_overwrite_exception" do
+      described_class.scope_overwrite_exception.should == false
+    end
+
+    it "sets persist_in_safe_mode" do
+      described_class.persist_in_safe_mode.should == false
+    end
+
+    it "sets raise_not_found_error" do
+      described_class.raise_not_found_error.should == false
+    end
+
+    it "returns nil, which is interpreted as the local time_zone" do
+      described_class.use_utc.should be_false
+    end
+  end
+
+  describe ".default_logger" do
+
+    it "returns a Logger instance by default" do
+      described_class.default_logger.should be_a(Logger)
     end
   end
 
   describe ".logger" do
 
-    it "returns the config logger" do
-      described_class.logger.should be_a(::Logger)
+    it "returns the configured logger (NilClass)" do
+      described_class.logger.should be_a(NilClass)
     end
   end
 
   describe ".logger=" do
 
-    before do
-      described_class.logger = Mongoid::Logger.new
+    context "when the logger is set to Mongoid::Logger" do
+
+      before do
+        described_class.logger = Mongoid::Logger.new
+      end
+
+      it "returns a Mongoid::Logger instance" do
+        described_class.logger.should be_a(Mongoid::Logger)
+      end
     end
 
-    it "sets the logger on the config" do
-      described_class.logger.should be_a(Mongoid::Logger)
+    context "when the logger is set to nil" do
+
+      before do
+        described_class.logger = nil
+      end
+
+      it "returns nil" do
+        described_class.logger.should be_a(NilClass)
+      end
     end
   end
 
@@ -256,6 +307,24 @@ describe Mongoid::Config do
     end
   end
 
+  describe ".purge!" do
+
+    before do
+      Post.create(:title => "testing")
+    end
+
+    context "when no collection name is provided" do
+
+      before do
+        Mongoid.purge!
+      end
+
+      it "purges the post collection" do
+        Mongoid.master.collection("posts").count.should eq(0)
+      end
+    end
+  end
+
   context "when defining options" do
 
     before do
@@ -266,6 +335,13 @@ describe Mongoid::Config do
 
       it "defaults to true" do
         described_class.allow_dynamic_fields.should be_true
+      end
+    end
+
+    describe ".identity_map_enabled" do
+
+      it "defaults to false" do
+        described_class.identity_map_enabled.should be_false
       end
     end
 
@@ -283,6 +359,13 @@ describe Mongoid::Config do
       end
     end
 
+    describe ".scope_overwrite_exception" do
+
+      it "defaults to false" do
+        described_class.scope_overwrite_exception.should be_false
+      end
+    end
+
     describe ".persist_in_safe_mode" do
 
       it "defaults to false" do
@@ -290,17 +373,17 @@ describe Mongoid::Config do
       end
     end
 
+    describe ".preload_models" do
+
+      it "defaults to false" do
+        described_class.preload_models.should be_false
+      end
+    end
+
     describe ".raise_not_found_error" do
 
       it "defaults to true" do
         described_class.raise_not_found_error.should be_true
-      end
-    end
-
-    describe ".reconnect_time" do
-
-      it "defaults to 3" do
-        described_class.reconnect_time.should == 3
       end
     end
 
@@ -328,60 +411,8 @@ describe Mongoid::Config do
 
   describe ".reset" do
 
-    it "clears out the settings" do
-      described_class.reset.should == {}
-    end
-  end
-
-  describe ".slaves", :config => :slaves do
-
-    context "when slaves exist" do
-
-      before do
-        described_class.slaves = [
-          Mongo::Connection.new("localhost", 27018, :slave_ok => true).db("mongoid_test")
-        ]
-      end
-
-      it "returns the slaves" do
-        described_class.slaves.first.name.should == "mongoid_test"
-      end
-    end
-
-    context "when no slaves exist" do
-
-      before do
-        described_class.slaves = []
-      end
-
-      it "returns an empty array" do
-        described_class.slaves.should be_empty
-      end
-    end
-  end
-
-  describe ".slaves=", :config => :slaves do
-
-    context "when provided databases" do
-
-      before do
-        described_class.slaves = [
-          Mongo::Connection.new("localhost", 27018, :slave_ok => true).db("mongoid_test")
-        ]
-      end
-
-      it "sets the slaves" do
-        described_class.slaves.first.name.should == "mongoid_test"
-      end
-    end
-
-    context "when not provided databases" do
-
-      it "raises an error" do
-        expect {
-          described_class.slaves = [:testing]
-        }.to raise_error(Mongoid::Errors::InvalidDatabase)
-      end
+    it "reverts to the defaults" do
+      described_class.reset.should == described_class.defaults
     end
   end
 end

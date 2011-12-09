@@ -1,10 +1,10 @@
-.DS_STORE
+.DS_Store
 coverage/*
 pkg/*
 scratch_directory/*
+sandbox/*
 tmp/*
 *.gem
-RAILS
 .bundle
 Gemfile.lock
 rdoc/*
@@ -15,3 +15,8 @@ DONATE
 doc/*
 *.swp
 *.un~
+*~
+*.rbc
+*.profile
+*.profile.pdf
+*.symbols

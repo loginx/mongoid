@@ -4,16 +4,80 @@ describe Mongoid::Relations::Cyclic do
 
   describe ".recursively_embeds_many" do
 
-    let(:document) do
-      Role.new
+    context "when the name is inflected easily" do
+
+      let(:document) do
+        Role.new
+      end
+
+      it "creates the parent relation" do
+        document.should respond_to(:parent_role)
+      end
+
+      it "creates the child relation" do
+        document.should respond_to(:child_roles)
+      end
+
+      it "sets cyclic to true" do
+        document.cyclic.should be_true
+      end
     end
 
-    it "creates the parent relation" do
-      document.should respond_to(:parent_role)
+    context "when the name is not inflected easily" do
+
+      let(:document) do
+        Entry.new
+      end
+
+      it "creates the parent relation" do
+        document.should respond_to(:parent_entry)
+      end
+
+      it "creates the child relation" do
+        document.should respond_to(:child_entries)
+      end
+
+      it "sets cyclic to true" do
+        document.cyclic.should be_true
+      end
     end
 
-    it "creates the child relation" do
-      document.should respond_to(:child_roles)
+    context "when the document is namespaced" do
+
+      let(:document) do
+        Trees::Node.new
+      end
+
+      it "creates the parent relation" do
+        document.should respond_to(:parent_node)
+      end
+
+      it "creates the child relation" do
+        document.should respond_to(:child_nodes)
+      end
+
+      it "sets cyclic to true" do
+        document.cyclic.should be_true
+      end
+    end
+
+    context "when the classes are namespaced" do
+
+      let(:document) do
+        Fruits::Apple.new
+      end
+
+      it "creates the parent relation" do
+        document.should respond_to(:parent_apple)
+      end
+
+      it "creates the child relation" do
+        document.should respond_to(:child_apples)
+      end
+
+      it "sets cyclic to true" do
+        document.cyclic.should be_true
+      end
     end
   end
 
@@ -29,6 +93,10 @@ describe Mongoid::Relations::Cyclic do
 
     it "creates the child relation" do
       document.should respond_to(:child_shelf)
+    end
+
+    it "sets cyclic to true" do
+      document.cyclic.should be_true
     end
   end
 end

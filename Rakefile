@@ -2,7 +2,7 @@ require "bundler"
 Bundler.setup
 
 require "rake"
-require "rake/rdoctask"
+require "rdoc/task"
 require "rspec"
 require "rspec/core/rake_task"
 
@@ -19,33 +19,31 @@ task :install => :build do
 end
 
 task :release => :build do
-  system "git tag -a #{Mongoid::VERSION} -m 'Tagging #{Mongoid::VERSION}'"
+  system "git tag -a v#{Mongoid::VERSION} -m 'Tagging #{Mongoid::VERSION}'"
   system "git push --tags"
   system "gem push mongoid-#{Mongoid::VERSION}.gem"
 end
 
-Rspec::Core::RakeTask.new(:spec) do |spec|
-  spec.pattern = "spec/**/*_spec.rb"
-end
-
-Rspec::Core::RakeTask.new("spec:unit") do |spec|
+RSpec::Core::RakeTask.new("spec:unit") do |spec|
   spec.pattern = "spec/unit/**/*_spec.rb"
 end
 
-Rspec::Core::RakeTask.new("spec:functional") do |spec|
+RSpec::Core::RakeTask.new("spec:functional") do |spec|
   spec.pattern = "spec/functional/**/*_spec.rb"
 end
 
-Rspec::Core::RakeTask.new('spec:progress') do |spec|
+RSpec::Core::RakeTask.new('spec:progress') do |spec|
   spec.rspec_opts = %w(--format progress)
   spec.pattern = "spec/**/*_spec.rb"
 end
 
-Rake::RDocTask.new do |rdoc|
+RDoc::Task.new do |rdoc|
   rdoc.rdoc_dir = "rdoc"
   rdoc.title = "mongoid #{Mongoid::VERSION}"
   rdoc.rdoc_files.include("README*")
+  rdoc.rdoc_files.include("CHANGELOG*")
   rdoc.rdoc_files.include("lib/**/*.rb")
 end
 
+task :spec => [ "spec:functional", "spec:unit" ]
 task :default => :spec

@@ -1,43 +1,54 @@
 # encoding: utf-8
+require "mongoid/criterion/builder"
 require "mongoid/criterion/creational"
 require "mongoid/criterion/complex"
 require "mongoid/criterion/exclusion"
 require "mongoid/criterion/inclusion"
 require "mongoid/criterion/inspection"
 require "mongoid/criterion/optional"
+require "mongoid/criterion/scoping"
 require "mongoid/criterion/selector"
 
 module Mongoid #:nodoc:
 
   # The +Criteria+ class is the core object needed in Mongoid to retrieve
   # objects from the database. It is a DSL that essentially sets up the
-  # selector and options arguments that get passed on to a <tt>Mongo::Collection</tt>
+  # selector and options arguments that get passed on to a Mongo::Collection
   # in the Ruby driver. Each method on the +Criteria+ returns self to they
   # can be chained in order to create a readable criterion to be executed
   # against the database.
   #
-  # Example setup:
-  #
-  # <tt>criteria = Criteria.new</tt>
-  #
-  # <tt>criteria.only(:field).where(:field => "value").skip(20).limit(20)</tt>
-  #
-  # <tt>criteria.execute</tt>
+  # @example Create and execute a criteria.
+  #   criteria = Criteria.new
+  #   criteria.only(:field).where(:field => "value").skip(20).limit(20)
+  #   criteria.execute
   class Criteria
     include Enumerable
+    include Criterion::Builder
     include Criterion::Creational
     include Criterion::Exclusion
     include Criterion::Inclusion
     include Criterion::Inspection
     include Criterion::Optional
+    include Criterion::Scoping
 
-    attr_accessor :collection, :documents, :embedded, :ids, :klass, :options, :selector
+    attr_accessor \
+      :documents,
+      :embedded,
+      :ids,
+      :klass,
+      :options,
+      :selector,
+      :field_list
 
     delegate \
+      :add_to_set,
       :aggregate,
       :avg,
       :blank?,
       :count,
+      :size,
+      :length,
       :delete,
       :delete_all,
       :destroy,
@@ -47,14 +58,11 @@ module Mongoid #:nodoc:
       :execute,
       :first,
       :group,
-      :id_criteria,
       :last,
       :max,
       :min,
       :one,
-      :page,
-      :paginate,
-      :per_page,
+      :pull,
       :shift,
       :sum,
       :update,
@@ -62,12 +70,22 @@ module Mongoid #:nodoc:
 
     # Concatinate the criteria with another enumerable. If the other is a
     # +Criteria+ then it needs to get the collection from it.
+    #
+    # @example Concat 2 criteria.
+    #   criteria + criteria
+    #
+    # @param [ Criteria ] other The other criteria.
     def +(other)
       entries + comparable(other)
     end
 
     # Returns the difference between the criteria and another enumerable. If
     # the other is a +Criteria+ then it needs to get the collection from it.
+    #
+    # @example Get the difference of 2 criteria.
+    #   criteria - criteria
+    #
+    # @param [ Criteria ] other The other criteria.
     def -(other)
       entries - comparable(other)
     end
@@ -75,11 +93,11 @@ module Mongoid #:nodoc:
     # Returns true if the supplied +Enumerable+ or +Criteria+ is equal to the results
     # of this +Criteria+ or the criteria itself.
     #
-    # This will force a database load when called if an enumerable is passed.
+    # @note This will force a database load when called if an enumerable is passed.
     #
-    # Options:
+    # @param [ Object ] other The other +Enumerable+ or +Criteria+ to compare to.
     #
-    # other: The other +Enumerable+ or +Criteria+ to compare to.
+    # @return [ true, false ] If the objects are equal.
     def ==(other)
       case other
       when Criteria
@@ -91,10 +109,27 @@ module Mongoid #:nodoc:
       end
     end
 
+    # Get the collection associated with the criteria.
+    #
+    # @example Get the collection.
+    #   criteria.collection
+    #
+    # @return [ Collection ] The collection.
+    #
+    # @since 2.2.0
+    def collection
+      klass.collection
+    end
+
     # Return or create the context in which this criteria should be executed.
     #
     # This will return an Enumerable context if the class is embedded,
     # otherwise it will return a Mongo context for root classes.
+    #
+    # @example Get the appropriate context.
+    #   criteria.context
+    #
+    # @return [ Mongo, Enumerable ] The appropriate context.
     def context
       @context ||= Contexts.context_for(self, embedded)
     end
@@ -102,33 +137,59 @@ module Mongoid #:nodoc:
     # Iterate over each +Document+ in the results. This can take an optional
     # block to pass to each argument in the results.
     #
-    # Example:
+    # @example Iterate over the criteria results.
+    #   criteria.each { |doc| p doc }
     #
-    # <tt>criteria.each { |doc| p doc }</tt>
+    # @return [ Criteria ] The criteria itself.
     def each(&block)
       tap { context.iterate(&block) }
     end
 
-    # Return true if the criteria has some Document or not
+    # Return true if the criteria has some Document or not.
     #
-    # Example:
+    # @example Are there any documents for the criteria?
+    #   criteria.exists?
     #
-    # <tt>criteria.exists?</tt>
+    # @return [ true, false ] If documents match.
     def exists?
       context.count > 0
     end
 
+    # Extract a single id from the provided criteria. Could be in an $and
+    # query or a straight _id query.
+    #
+    # @example Extract the id.
+    #   criteria.extract_id
+    #
+    # @return [ Object ] The id.
+    #
+    # @since 2.3.0
+    def extract_id
+      selector[:_id]
+    end
+
+    # When freezing a criteria we need to initialize the context first
+    # otherwise the setting of the context on attempted iteration will raise a
+    # runtime error.
+    #
+    # @example Freeze the criteria.
+    #   criteria.freeze
+    #
+    # @return [ Criteria ] The frozen criteria.
+    #
+    # @since 2.0.0
+    def freeze
+      context and inclusions and super
+    end
+
     # Merges the supplied argument hash into a single criteria
     #
-    # Options:
+    # @example Fuse the criteria and the object.
+    #   criteria.fuse(:where => { :field => "value"}, :limit => 20)
     #
-    # criteria_conditions: Hash of criteria keys, and parameter values
+    # @param [ Hash ] criteria_conditions Criteria keys and values.
     #
-    # Example:
-    #
-    # <tt>criteria.fuse(:where => { :field => "value"}, :limit => 20)</tt>
-    #
-    # Returns <tt>self</tt>
+    # @return [ Criteria ] self.
     def fuse(criteria_conditions = {})
       criteria_conditions.inject(self) do |criteria, (key, value)|
         criteria.send(key, value)
@@ -138,55 +199,65 @@ module Mongoid #:nodoc:
     # Create the new +Criteria+ object. This will initialize the selector
     # and options hashes, as well as the type of criteria.
     #
-    # Options:
+    # @example Instantiate a new criteria.
+    #   Criteria.new(Model, true)
     #
-    # type: One of :all, :first:, or :last
-    # klass: The class to execute on.
+    # @param [ Class ] klass The model the criteria is for.
+    # @param [ true, false ] embedded Is the criteria for embedded docs.
     def initialize(klass, embedded = false)
       @selector = Criterion::Selector.new(klass)
       @options, @klass, @documents, @embedded = {}, klass, [], embedded
     end
 
-    # Merges another object into this +Criteria+. The other object may be a
-    # +Criteria+ or a +Hash+. This is used to combine multiple scopes together,
-    # where a chained scope situation may be desired.
+    # Merges another object with this +Criteria+ and returns a new criteria.
+    # The other object may be a +Criteria+ or a +Hash+. This is used to
+    # combine multiple scopes together, where a chained scope situation
+    # may be desired.
     #
-    # Options:
+    # @example Merge the criteria with a conditions hash.
+    #   criteria.merge({ :conditions => { :title => "Sir" } })
     #
-    # other: The +Criteria+ or +Hash+ to merge with.
+    # @example Merge the criteria with another criteria.
+    #   criteri.merge(other_criteria)
     #
-    # Example:
+    # @param [ Criteria, Hash ] other The other criterion to merge with.
     #
-    # <tt>criteria.merge({ :conditions => { :title => "Sir" } })</tt>
+    # @return [ Criteria ] A cloned self.
     def merge(other)
       clone.tap do |crit|
-        crit.selector.update(other.selector)
-        crit.options.update(other.options)
-        crit.documents = other.documents
+        if other.is_a?(Criteria)
+          crit.selector.update(other.selector)
+          crit.options.update(other.options)
+          crit.documents = other.documents
+        else
+          duped = other.dup
+          crit.selector.update(duped.delete(:conditions) || {})
+          crit.options.update(duped)
+        end
       end
     end
 
-    # Used for chaining +Criteria+ scopes together in the for of class methods
-    # on the +Document+ the criteria is for.
+    # Returns true if criteria responds to the given method.
     #
-    # Options:
+    # @example Does the criteria respond to the method?
+    #   crtiteria.respond_to?(:each)
     #
-    # name: The name of the class method on the +Document+ to chain.
-    # args: The arguments passed to the method.
+    # @param [ Symbol ] name The name of the class method on the +Document+.
+    # @param [ true, false ] include_private Whether to include privates.
     #
-    # Returns: <tt>Criteria</tt>
-    def method_missing(name, *args)
-      if @klass.respond_to?(name)
-        @klass.send(:with_scope, self) do
-          @klass.send(name, *args)
-        end
-      else
-        return entries.send(name, *args)
-      end
+    # @return [ true, false ] If the criteria responds to the method.
+    def respond_to?(name, include_private = false)
+      # don't include klass private methods because method_missing won't call them
+      super || @klass.respond_to?(name) || entries.respond_to?(name, include_private)
     end
 
     # Returns the selector and options as a +Hash+ that would be passed to a
     # scope for use with named scopes.
+    #
+    # @example Get the criteria as a scoped hash.
+    #   criteria.scoped
+    #
+    # @return [ Hash ] The criteria as a scoped hash.
     def scoped
       scope_options = @options.dup
       sorting = scope_options.delete(:sort)
@@ -207,129 +278,139 @@ module Mongoid #:nodoc:
       entries.as_json(options)
     end
 
-    class << self
-
-      # Encaspulates the behavior of taking arguments and parsing them into a
-      # finder type and a corresponding criteria object.
-      #
-      # Example:
-      #
-      # <tt>Criteria.parse!(Person, :all, :conditions => {})</tt>
-      #
-      # Options:
-      #
-      # klass: The klass to create the criteria for.
-      # args: An assortment of finder options.
-      #
-      # Returns:
-      #
-      # An Array with the type and criteria.
-      def parse!(klass, embedded, *args)
-        if args[0].nil?
-          Errors::InvalidOptions.new("Calling Document#find with nil is invalid")
-        end
-        type = args.delete_at(0) if args[0].is_a?(Symbol)
-        criteria = translate(klass, embedded, *args)
-        return [ type, criteria ]
+    # Search for documents based on a variety of args.
+    #
+    # @example Find by an id.
+    #   criteria.search(BSON::ObjectId.new)
+    #
+    # @example Find by multiple ids.
+    #   criteria.search([ BSON::ObjectId.new, BSON::ObjectId.new ])
+    #
+    # @example Conditionally find all matching documents.
+    #   criteria.search(:all, :conditions => { :title => "Sir" })
+    #
+    # @example Conditionally find the first document.
+    #   criteria.search(:first, :conditions => { :title => "Sir" })
+    #
+    # @example Conditionally find the last document.
+    #   criteria.search(:last, :conditions => { :title => "Sir" })
+    #
+    # @param [ Symbol, BSON::ObjectId, Array<BSON::ObjectId> ] arg The
+    #   argument to search with.
+    # @param [ Hash ] options The options to search with.
+    #
+    # @return [ Array<Symbol, Criteria> ] The type and criteria.
+    #
+    # @since 2.0.0
+    def search(*args)
+      raise_invalid if args[0].nil?
+      type = args[0]
+      params = args[1] || {}
+      return [ :ids, for_ids(type) ] unless type.is_a?(Symbol)
+      conditions = params.delete(:conditions) || {}
+      if conditions.include?(:id)
+        conditions[:_id] = conditions[:id]
+        conditions.delete(:id)
       end
+      return [ type, where(conditions).extras(params) ]
+    end
 
-      # Translate the supplied arguments into a +Criteria+ object.
-      #
-      # If the passed in args is a single +String+, then it will
-      # construct an id +Criteria+ from it.
-      #
-      # If the passed in args are a type and a hash, then it will construct
-      # the +Criteria+ with the proper selector, options, and type.
-      #
-      # Options:
-      #
-      # args: either a +String+ or a +Symbol+, +Hash combination.
-      #
-      # Example:
-      #
-      # <tt>Criteria.translate(Person, "4ab2bc4b8ad548971900005c")</tt>
-      # <tt>Criteria.translate(Person, :conditions => { :field => "value"}, :limit => 20)</tt>
-      def translate(*args)
-        klass = args[0]
-        embedded = args[1]
-        params = args[2] || {}
-        unless params.is_a?(Hash)
-          return klass.criteria(embedded).id_criteria(params)
-        end
-        conditions = params.delete(:conditions) || {}
-        if conditions.include?(:id)
-          conditions[:_id] = conditions[:id]
-          conditions.delete(:id)
-        end
-        return klass.criteria(embedded).where(conditions).extras(params)
-      end
+    # Convenience method of raising an invalid options error.
+    #
+    # @example Raise the error.
+    #   criteria.raise_invalid
+    #
+    # @raise [ Errors::InvalidOptions ] The error.
+    #
+    # @since 2.0.0
+    def raise_invalid
+      raise Errors::InvalidFind.new
     end
 
     protected
 
     # Return the entries of the other criteria or the object. Used for
     # comparing criteria or an enumerable.
+    #
+    # @example Get the comparable version.
+    #   criteria.comparable(other)
+    #
+    # @param [ Criteria ] other Another criteria.
+    #
+    # @return [ Array ] The array to compare with.
     def comparable(other)
       other.is_a?(Criteria) ? other.entries : other
     end
 
-    # Filters the unused options out of the options +Hash+. Currently this
-    # takes into account the "page" and "per_page" options that would be passed
-    # in if using will_paginate.
+    # Get the raw driver collection from the criteria.
     #
-    # Example:
+    # @example Get the raw driver collection.
+    #   criteria.driver
     #
-    # Given a criteria with a selector of { :page => 1, :per_page => 40 }
+    # @return [ Mongo::Collection ] The driver collection.
     #
-    # <tt>criteria.filter_options</tt> # selector: { :skip => 0, :limit => 40 }
-    def filter_options
-      page_num = @options.delete(:page)
-      per_page_num = @options.delete(:per_page)
-      if (page_num || per_page_num)
-        @options[:limit] = limits = (per_page_num || 20).to_i
-        @options[:skip] = (page_num || 1).to_i * limits - limits
-      end
+    # @since 2.2.0
+    def driver
+      collection.driver
     end
 
     # Clone or dup the current +Criteria+. This will return a new criteria with
     # the selector, options, klass, embedded options, etc intact.
     #
-    # Example:
+    # @example Clone a criteria.
+    #   criteria.clone
     #
-    # <tt>criteria.clone</tt>
-    # <tt>criteria.dup</tt>
+    # @example Dup a criteria.
+    #   criteria.dup
     #
-    # Options:
+    # @param [ Criteria ] other The criteria getting cloned.
     #
-    # other: The criteria getting cloned.
-    #
-    # Returns:
-    #
-    # A new identical criteria
+    # @return [ nil ] nil.
     def initialize_copy(other)
       @selector = other.selector.dup
       @options = other.options.dup
+      @includes = other.inclusions.dup
       @context = nil
+    end
+
+    # Used for chaining +Criteria+ scopes together in the for of class methods
+    # on the +Document+ the criteria is for.
+    def method_missing(name, *args, &block)
+      if @klass.respond_to?(name)
+        @klass.send(:with_scope, self) do
+          @klass.send(name, *args, &block)
+        end
+      else
+        return entries.send(name, *args)
+      end
     end
 
     # Update the selector setting the operator on the value for each key in the
     # supplied attributes +Hash+.
     #
-    # Example:
+    # @example Update the selector.
+    #   criteria.update_selector({ :field => "value" }, "$in")
     #
-    # <tt>criteria.update_selector({ :field => "value" }, "$in")</tt>
-    def update_selector(attributes, operator)
+    # @param [ Hash, Array ] attributes The values to convert and apply.
+    # @param [ String ] operator The MongoDB operator.
+    # @param [ Symbol ] combine The operator to use when combining sets.
+    def update_selector(attributes, operator, combine = :+)
       clone.tap do |crit|
         converted = BSON::ObjectId.convert(klass, attributes || {})
-        converted.each do |key, value|
-          unless crit.selector[key]
+        converted.each_pair do |key, value|
+          existing = crit.selector[key]
+          unless existing
             crit.selector[key] = { operator => value }
           else
-            if crit.selector[key].has_key?(operator)
-              new_value = crit.selector[key].values.first + value
-              crit.selector[key] = { operator => new_value }
+            if existing.respond_to?(:merge)
+              if existing.has_key?(operator)
+                new_value = existing.values.first.send(combine, value)
+                crit.selector[key] = { operator => new_value }
+              else
+                crit.selector[key][operator] = value
+              end
             else
-              crit.selector[key][operator] = value
+              crit.selector[key] = { operator => value }
             end
           end
         end

@@ -4,9 +4,9 @@ module Mongoid # :nodoc:
 
     # Superclass for all objects that bind relations together.
     class Binding
-      attr_reader :base, :target, :metadata
+      include Threaded::Lifecycle
 
-      OPTIONS = { :binding => true, :continue => false }
+      attr_reader :base, :target, :metadata
 
       # Create the new binding.
       #

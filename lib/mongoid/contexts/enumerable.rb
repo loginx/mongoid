@@ -1,46 +1,51 @@
 # encoding: utf-8
-
 require 'mongoid/contexts/enumerable/sort'
 
 module Mongoid #:nodoc:
   module Contexts #:nodoc:
     class Enumerable
-      include Ids, Paging
-      attr_accessor :criteria
+      include Relations::Embedded::Atomic
+
+      attr_accessor :collection, :criteria
 
       delegate :blank?, :empty?, :first, :last, :to => :execute
-      delegate :klass, :documents, :options, :selector, :to => :criteria
+      delegate :klass, :documents, :options, :field_list, :selector, :to => :criteria
 
       # Return aggregation counts of the grouped documents. This will count by
       # the first field provided in the fields array.
       #
-      # Returns:
+      # @example Aggregate on a field.
+      #   person.addresses.only(:street).aggregate
       #
-      # A +Hash+ with field values as keys, count as values
+      # @return [ Hash ] Field values as keys, count as values
       def aggregate
-        counts = {}
-        group.each_pair { |key, value| counts[key] = value.size }
-        counts
+        {}.tap do |counts|
+          group.each_pair { |key, value| counts[key] = value.size }
+        end
       end
 
       # Get the average value for the supplied field.
       #
-      # Example:
+      # @example Get the average.
+      #   context.avg(:age)
       #
-      # <tt>context.avg(:age)</tt>
-      #
-      # Returns:
-      #
-      # A numeric value that is the average.
+      # @return [ Numeric ] A numeric value that is the average.
       def avg(field)
         total = sum(field)
         total ? (total.to_f / count) : nil
       end
 
       # Gets the number of documents in the array. Delegates to size.
+      #
+      # @example Get the count.
+      #   context.count
+      #
+      # @return [ Integer ] The count of documents.
       def count
-        @count ||= filter.size
+        @count ||= execute.size
       end
+      alias :length :count
+      alias :size :count
 
       # Delete all the documents in the database matching the selector.
       #
@@ -51,7 +56,12 @@ module Mongoid #:nodoc:
       #
       # @since 2.0.0.rc.1
       def delete_all
-        count.tap { filter.each(&:delete) }
+        atomically(:$pull) do
+          set_collection
+          count.tap do
+            filter.each { |doc| doc.delete }
+          end
+        end
       end
       alias :delete :delete_all
 
@@ -64,16 +74,22 @@ module Mongoid #:nodoc:
       #
       # @since 2.0.0.rc.1
       def destroy_all
-        count.tap { filter.each(&:destroy) }
+        atomically(:$pull) do
+          set_collection
+          count.tap do
+            filter.each { |doc| doc.destroy }
+          end
+        end
       end
       alias :destroy :destroy_all
 
       # Gets an array of distinct values for the supplied field across the
       # entire array or the susbset given the criteria.
       #
-      # Example:
+      # @example Get the list of distinct values.
+      #   context.distinct(:title)
       #
-      # <tt>context.distinct(:title)</tt>
+      # @return [ Array<String> ] The distinct values.
       def distinct(field)
         execute.collect { |doc| doc.send(field) }.uniq
       end
@@ -81,20 +97,22 @@ module Mongoid #:nodoc:
       # Enumerable implementation of execute. Returns matching documents for
       # the selector, and adds options if supplied.
       #
-      # Returns:
+      # @example Execute the context.
+      #   context.execute
       #
-      # An +Array+ of documents that matched the selector.
-      def execute(paginating = false)
+      # @return [ Array<Document> ] Documents that matched the selector.
+      def execute
         limit(sort(filter)) || []
       end
 
       # Groups the documents by the first field supplied in the field options.
       #
-      # Returns:
+      # @example Group the context.
+      #   context.group
       #
-      # A +Hash+ with field values as keys, arrays of documents as values.
+      # @return [ Hash ] Field values as keys, arrays of documents as values.
       def group
-        field = options[:fields].first
+        field = field_list.first
         execute.group_by { |doc| doc.send(field) }
       end
 
@@ -102,9 +120,10 @@ module Mongoid #:nodoc:
       # options from a +Criteria+ and a documents array that is the underlying
       # array of embedded documents from a has many association.
       #
-      # Example:
+      # @example Create a new context.
+      #   Mongoid::Contexts::Enumerable.new(criteria)
       #
-      # <tt>Mongoid::Contexts::Enumerable.new(criteria)</tt>
+      # @param [ Criteria ] criteria The criteria for the context.
       def initialize(criteria)
         @criteria = criteria
       end
@@ -112,44 +131,47 @@ module Mongoid #:nodoc:
       # Iterate over each +Document+ in the results. This can take an optional
       # block to pass to each argument in the results.
       #
-      # Example:
-      #
-      # <tt>context.iterate { |doc| p doc }</tt>
+      # @example Iterate over the documents.
+      #   context.iterate { |doc| p doc }
       def iterate(&block)
         execute.each(&block)
       end
 
       # Get the largest value for the field in all the documents.
       #
-      # Returns:
+      # @example Get the max value.
+      #   context.max(:age)
       #
-      # The numerical largest value.
+      # @return [ Numeric ] The numerical largest value.
       def max(field)
         determine(field, :>=)
       end
 
       # Get the smallest value for the field in all the documents.
       #
-      # Returns:
+      # @example Get the minimum value.
+      #   context.min(:age)
       #
-      # The numerical smallest value.
+      # @return [ Numeric ] The numerical smallest value.
       def min(field)
         determine(field, :<=)
       end
 
       # Get one document.
       #
-      # Returns:
+      # @example Get one document.
+      #   context.one
       #
-      # The first document in the +Array+
+      # @return [ Document ] The first document in the array.
       alias :one :first
 
       # Get one document and tell the criteria to skip this record on
       # successive calls.
       #
-      # Returns:
+      # @example Shift the documents.
+      #   context.shift
       #
-      # The first document in the +Array+
+      # @return [ Document ] The first document in the array.
       def shift
         first.tap do |document|
           self.criteria = criteria.skip((options[:skip] || 0) + 1)
@@ -158,12 +180,13 @@ module Mongoid #:nodoc:
 
       # Get the sum of the field values for all the documents.
       #
-      # Returns:
+      # @example Get the sum of the field.
+      #   context.sum(:cost)
       #
-      # The numerical sum of all the document field values.
+      # @return [ Numeric ] The numerical sum of all the document field values.
       def sum(field)
         sum = execute.inject(nil) do |memo, doc|
-          value = doc.send(field)
+          value = doc.send(field) || 0
           memo ? memo += value : value
         end
       end
@@ -186,20 +209,36 @@ module Mongoid #:nodoc:
       alias :update :update_all
 
       protected
+
       # Filters the documents against the criteria's selector
+      #
+      # @example Filter the documents.
+      #   context.filter
+      #
+      # @return [ Array ] The documents filtered.
       def filter
         documents.select { |document| document.matches?(selector) }
       end
 
       # If the field exists, perform the comparison and set if true.
+      #
+      # @example Compare.
+      #   context.determine
+      #
+      # @return [ Array<Document> ] The matching documents.
       def determine(field, operator)
         matching = documents.inject(nil) do |memo, doc|
-          value = doc.send(field)
+          value = doc.send(field) || 0
           (memo && memo.send(operator, value)) ? memo : value
         end
       end
 
       # Limits the result set if skip and limit options.
+      #
+      # @example Limit the results.
+      #   context.limit(documents)
+      #
+      # @return [ Array<Document> ] The limited documents.
       def limit(documents)
         skip, limit = options[:skip], options[:limit]
         if skip && limit
@@ -212,7 +251,30 @@ module Mongoid #:nodoc:
         documents
       end
 
+      def root
+        @root ||= documents.first.try(:_root)
+      end
+
+      def root_class
+        @root_class ||= root ? root.class : nil
+      end
+
+      # Set the collection to the collection of the root document.
+      #
+      # @example Set the collection.
+      #   context.set_collection
+      #
+      # @return [ Collection ] The root collection.
+      def set_collection
+        @collection = root.collection if root && !root.embedded?
+      end
+
       # Sorts the result set if sort options have been set.
+      #
+      # @example Sort the documents.
+      #   context.sort(documents)
+      #
+      # @return [ Array<Document> ] The sorted documents.
       def sort(documents)
         return documents if options[:sort].blank?
         documents.sort_by do |document|

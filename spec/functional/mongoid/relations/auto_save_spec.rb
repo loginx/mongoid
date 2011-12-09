@@ -58,12 +58,12 @@ describe Mongoid::Relations::AutoSave do
 
           before do
             person.save
-            person.drugs.build(:name => "Percocet")
+            person.drugs << drug
             person.save
           end
 
-          it "does not save the relation" do
-            drug.should_not be_persisted
+          it "saves the relation" do
+            drug.should be_persisted
           end
         end
       end
@@ -90,12 +90,52 @@ describe Mongoid::Relations::AutoSave do
 
           before do
             person.save
-            person.build_account(:name => "Test")
+            person.account = account
             person.save
           end
 
-          it "does not save the relation" do
-            account.should_not be_persisted
+          it "saves the relation" do
+            account.should be_persisted
+          end
+        end
+      end
+
+      context "when the relation is a referenced in" do
+
+        before do
+          [ Ghost, Movie ].each(&:delete_all)
+        end
+
+        let(:ghost) do
+          Ghost.new(:name => "Slimer")
+        end
+
+        let(:movie) do
+          Movie.new(:title => "Ghostbusters")
+        end
+
+        context "when saving a new parent document" do
+
+          before do
+            ghost.movie = movie
+            ghost.save
+          end
+
+          it "saves the relation" do
+            movie.should be_persisted
+          end
+        end
+
+        context "when saving an existing parent document" do
+
+          before do
+            ghost.save
+            ghost.movie = movie
+            ghost.save
+          end
+
+          it "saves the relation" do
+            movie.should be_persisted
           end
         end
       end

@@ -6,82 +6,19 @@ module Mongoid #:nodoc:
     # proxies.
     class Many < Proxy
 
-      # Appends a document or array of documents to the relation. Will set
-      # the parent and update the index in the process.
-      #
-      # @example Append a document.
-      #   person.addresses << address
-      #
-      # @example Push a document.
-      #   person.addresses.push(address)
-      #
-      # @example Concat with other documents.
-      #   perosn.addresses.concat([ address_one, address_two ])
-      #
-      # @param [ Document, Array<Document> ] *args Any number of documents.
-      def <<(*args)
-        options = default_options(args)
-        args.flatten.each do |doc|
-          return doc unless doc
-          append(doc, options)
-          doc.save if base.persisted? && !options[:binding]
-        end
-      end
-      alias :concat :<<
-      alias :push :<<
+      delegate :avg, :max, :min, :sum, :to => :criteria
+      delegate :length, :size, :to => :target
 
-      # Builds a new document in the relation and appends it to the target.
-      # Takes an optional type if you want to specify a subclass.
+      # Is the relation empty?
       #
-      # @example Build a new document on the relation.
-      #   person.people.build(:name => "Bozo")
+      # @example Is the relation empty??
+      #   person.addresses.blank?
       #
-      # @param [ Hash ] attributes The attributes to build the document with.
-      # @param [ Class ] type Optional class to build the document with.
+      # @return [ true, false ] If the relation is empty or not.
       #
-      # @return [ Document ] The new document.
-      def build(attributes = {}, type = nil)
-        instantiated(type).tap do |doc|
-          append(doc, default_options(:binding => true))
-          doc.write_attributes(attributes)
-          doc.identify
-        end
-      end
-      alias :new :build
-
-      # Creates a new document on the references many relation. This will
-      # save the document if the parent has been persisted.
-      #
-      # @example Create and save the new document.
-      #   person.posts.create(:text => "Testing")
-      #
-      # @param [ Hash ] attributes The attributes to create with.
-      # @param [ Class ] type The optional type of document to create.
-      #
-      # @return [ Document ] The newly created document.
-      def create(attributes = nil, type = nil)
-        build(attributes, type).tap do |doc|
-          doc.save if base.persisted?
-        end
-      end
-
-      # Creates a new document on the references many relation. This will
-      # save the document if the parent has been persisted and will raise an
-      # error if validation fails.
-      #
-      # @example Create and save the new document.
-      #   person.posts.create!(:text => "Testing")
-      #
-      # @param [ Hash ] attributes The attributes to create with.
-      # @param [ Class ] type The optional type of document to create.
-      #
-      # @raise [ Errors::Validations ] If validation failed.
-      #
-      # @return [ Document ] The newly created document.
-      def create!(attributes = nil, type = nil)
-        build(attributes, type).tap do |doc|
-          doc.save! if base.persisted?
-        end
+      # @since 2.1.0
+      def blank?
+        size == 0
       end
 
       # Determine if any documents in this relation exist in the database.
@@ -103,8 +40,8 @@ module Mongoid #:nodoc:
       # @param [ Hash ] attrs The attributes to search or create with.
       #
       # @return [ Document ] An existing document or newly created one.
-      def find_or_create_by(attrs = {})
-        find_or(:create, attrs)
+      def find_or_create_by(attrs = {}, &block)
+        find_or(:create, attrs, &block)
       end
 
       # Find the first +Document+ given the conditions, or instantiates a new document
@@ -116,8 +53,47 @@ module Mongoid #:nodoc:
       # @param [ Hash ] attrs The attributes to search or initialize with.
       #
       # @return [ Document ] An existing document or newly instantiated one.
-      def find_or_initialize_by(attrs = {})
-        find_or(:build, attrs)
+      def find_or_initialize_by(attrs = {}, &block)
+        find_or(:build, attrs, &block)
+      end
+
+      # This proxy can never be nil.
+      #
+      # @example Is the proxy nil?
+      #   relation.nil?
+      #
+      # @return [ false ] Always false.
+      #
+      # @since 2.0.0
+      def nil?
+        false
+      end
+
+      # Since method_missing is overridden we should override this as well.
+      #
+      # @example Does the proxy respond to the method?
+      #   relation.respond_to?(:name)
+      #
+      # @param [ Symbol ] name The method name.
+      #
+      # @return [ true, false ] If the proxy responds to the method.
+      #
+      # @since 2.0.0
+      def respond_to?(name, include_private = false)
+        [].respond_to?(name, include_private) ||
+          klass.respond_to?(name, include_private) || super
+      end
+
+      # This is public access to the relation's criteria.
+      #
+      # @example Get the scoped relation.
+      #   relation.scoped
+      #
+      # @return [ Criteria ] The scoped criteria.
+      #
+      # @since 2.1.0
+      def scoped
+        criteria
       end
 
       # Gets the document as a serializable hash, used by ActiveModel's JSON and
@@ -142,19 +118,6 @@ module Mongoid #:nodoc:
 
       private
 
-      # Get the default options used in binding functions.
-      #
-      # @example Get the default options.
-      #   relation.default_options(:continue => true)
-      #
-      # @param [ Hash, Array ] args The arguments to parse from.
-      #
-      # @return [ Hash ] The options merged with the actuals.
-      def default_options(args = {})
-        options = args.is_a?(Hash) ? args : args.extract_options!
-        Mongoid.binding_defaults.merge(options)
-      end
-
       # Find the first object given the supplied attributes or create/initialize it.
       #
       # @example Find or create|initialize.
@@ -164,8 +127,8 @@ module Mongoid #:nodoc:
       # @param [ Hash ] attrs The attributes to build with.
       #
       # @return [ Document ] A matching document or a new/created one.
-      def find_or(method, attrs = {})
-        find(:first, :conditions => attrs) || send(method, attrs)
+      def find_or(method, attrs = {}, &block)
+        find(:first, :conditions => attrs) || send(method, attrs, &block)
       end
     end
   end

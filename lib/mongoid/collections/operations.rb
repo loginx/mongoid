@@ -2,6 +2,7 @@
 module Mongoid #:nodoc:
   module Collections #:nodoc:
     module Operations #:nodoc:
+
       # Constant definining all the read operations available for a
       # Mongo:Collection. This is used in delegation.
       READ = [
@@ -27,6 +28,7 @@ module Mongoid #:nodoc:
         :drop,
         :drop_index,
         :drop_indexes,
+        :find_and_modify,
         :insert,
         :remove,
         :rename,
@@ -36,7 +38,7 @@ module Mongoid #:nodoc:
 
       # Convenience constant for getting back all collection operations.
       ALL = (READ + WRITE)
-      PROXIED = ALL - [ :find, :find_one, :map_reduce, :mapreduce ]
+      PROXIED = ALL - [ :find, :find_one, :map_reduce, :mapreduce, :update ]
     end
   end
 end

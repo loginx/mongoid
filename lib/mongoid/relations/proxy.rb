@@ -5,17 +5,19 @@ module Mongoid # :nodoc:
     # This class is the superclass for all relation proxy objects, and contains
     # common behaviour for all of them.
     class Proxy
+      include Threaded::Lifecycle
 
       # We undefine most methods to get them sent through to the target.
       instance_methods.each do |method|
         undef_method(method) unless
-          method =~ /(^__|^send$|^object_id$|^extend$|^tap$)/
+          method =~ /(^__|^send$|^object_id$|^extend$|^respond_to\?$|^tap$)/
       end
 
       attr_accessor :base, :loaded, :metadata, :target
 
-      # Backwards compatibiloty with Mongoid beta releases.
+      # Backwards compatibility with Mongoid beta releases.
       delegate :klass, :to => :metadata
+      delegate :bind_one, :unbind_one, :to => :binding
 
       # Convenience for setting the target and the metadata properties since
       # all proxies will need to do this.
@@ -28,38 +30,38 @@ module Mongoid # :nodoc:
       # @param [ Metadata ] metadata The relation's metadata.
       #
       # @since 2.0.0.rc.1
-      def init(base, target, metadata, &block)
-        @base, @building, @target, @metadata = base, false, target, metadata
-        yield block if block_given?
-        extend Module.new(&metadata.extension) if metadata.extension?
+      def init(base, target, metadata)
+        @base, @target, @metadata = base, target, metadata
+        yield(self) if block_given?
+        extend metadata.extension if metadata.extension?
+      end
+
+      # The default substitutable object for a relation proxy is the clone of
+      # the target.
+      #
+      # @example Get the substitutable.
+      #   proxy.substitutable
+      #
+      # @return [ Object ] A clone of the target.
+      #
+      # @since 2.1.6
+      def substitutable
+        target
       end
 
       protected
 
-      # Yields to the block to allow the building flag to get set and unset for
-      # the supplied code.
+      # Get the collection from the root of the hierarchy.
       #
-      # @example Set the building status.
-      #   person.building { @target << Post.new }
+      # @example Get the collection.
+      #   relation.collection
       #
-      # @since 2.0.0.rc.1
-      def building(&block)
-        @building = true
-        yield block if block_given?
-        @building = false
-      end
-
-      # Convenience method for determining if we are building an association.
-      # We never want to save in this case.
+      # @return [ Collection ] The root's collection.
       #
-      # @example Are we currently building?
-      #   person.posts.building?
-      #
-      # @return [ true, false ] True if currently building, false if not.
-      #
-      # @since 2.0.0.rc.1
-      def building?
-        !!@building
+      # @since 2.0.0
+      def collection
+        root = base._root
+        root.collection unless root.embedded?
       end
 
       # Return a new document for the type of class we want to instantiate.
@@ -75,32 +77,7 @@ module Mongoid # :nodoc:
       #
       # @since 2.0.0.rc.1
       def instantiated(type = nil)
-        type ? type.instantiate : metadata.klass.instantiate
-      end
-
-      # Determines if the target been loaded into memory or not.
-      #
-      # @example Is the proxy loaded?
-      #   proxy.loaded?
-      #
-      # @return [ true, false ] True if loaded, false if not.
-      #
-      # @since 2.0.0.rc.1
-      def loaded?
-        !!@loaded
-      end
-
-      # Takes the supplied documents and sets the metadata on them. Used when
-      # creating new documents and adding them to the relation.
-      #
-      # @example Set the metadata.
-      #   proxy.characterize(addresses)
-      #
-      # @param [ Array<Document> ] documents The documents to set metadata on.
-      #
-      # @since 2.0.0.rc.4
-      def characterize(documents)
-        documents.each { |doc| characterize_one(doc) }
+        type ? type.new : metadata.klass.new
       end
 
       # Takes the supplied document and sets the metadata on it.
@@ -122,6 +99,46 @@ module Mongoid # :nodoc:
       # @param [ Array ] *args The arguments passed to the method.
       def method_missing(name, *args, &block)
         target.send(name, *args, &block)
+      end
+
+      # When the base document illegally references an embedded document this
+      # error will get raised.
+      #
+      # @example Raise the error.
+      #   relation.raise_mixed
+      #
+      # @raise [ Errors::MixedRelations ] The error.
+      #
+      # @since 2.0.0
+      def raise_mixed
+        raise Errors::MixedRelations.new(base.class, metadata.klass)
+      end
+
+      # When the base is not yet saved and the user calls create or create!
+      # on the relation, this error will get raised.
+      #
+      # @example Raise the error.
+      #   relation.raise_unsaved(post)
+      #
+      # @param [ Document ] doc The child document getting created.
+      #
+      # @raise [ Errors::UnsavedDocument ] The error.
+      #
+      # @since 2.0.0.rc.6
+      def raise_unsaved(doc)
+        raise Errors::UnsavedDocument.new(base, doc)
+      end
+
+      # Get the class of the root document in the hierarchy.
+      #
+      # @example Get the root's class.
+      #   proxy.root_class
+      #
+      # @return [ Class ] The root class.
+      #
+      # @since 2.1.8
+      def root_class
+        @root_class ||= base._root.class
       end
     end
   end

@@ -1,4 +1,31 @@
 # encoding: utf-8
+require "mongoid/fields/mappings"
+require "mongoid/fields/serializable"
+require "mongoid/fields/internal/timekeeping"
+require "mongoid/fields/internal/array"
+require "mongoid/fields/internal/big_decimal"
+require "mongoid/fields/internal/binary"
+require "mongoid/fields/internal/boolean"
+require "mongoid/fields/internal/date"
+require "mongoid/fields/internal/date_time"
+require "mongoid/fields/internal/float"
+require "mongoid/fields/internal/hash"
+require "mongoid/fields/internal/integer"
+require "mongoid/fields/internal/bignum"
+require "mongoid/fields/internal/fixnum"
+require "mongoid/fields/internal/localized"
+require "mongoid/fields/internal/nil_class"
+require "mongoid/fields/internal/object"
+require "mongoid/fields/internal/object_id"
+require "mongoid/fields/internal/range"
+require "mongoid/fields/internal/set"
+require "mongoid/fields/internal/string"
+require "mongoid/fields/internal/symbol"
+require "mongoid/fields/internal/time"
+require "mongoid/fields/internal/time_with_zone"
+require "mongoid/fields/internal/foreign_keys/array"
+require "mongoid/fields/internal/foreign_keys/object"
+
 module Mongoid #:nodoc
 
   # This module defines behaviour for fields.
@@ -6,14 +33,59 @@ module Mongoid #:nodoc
     extend ActiveSupport::Concern
 
     included do
-      # Set up the class attributes that must be available to all subclasses.
-      # These include defaults, fields
-      delegate :defaults, :fields, :to => "self.class"
+      class_attribute :defaults
+      class_attribute :fields
+
+      self.defaults = []
+      self.fields = {}
+
+      field(:_type, :type => String)
+      field(:_id, :type => BSON::ObjectId)
+
+      alias :id :_id
+      alias :id= :_id=
+    end
+
+    class << self
+
+      # Stores the provided block to be run when the option name specified is
+      # defined on a field.
+      #
+      # No assumptions are made about what sort of work the handler might
+      # perform, so it will always be called if the `option_name` key is
+      # provided in the field definition -- even if it is false or nil.
+      #
+      # @example
+      #   Mongoid::Fields.option :required do |model, field, value|
+      #     model.validates_presence_of field if value
+      #   end
+      #
+      # @param [ Symbol ] option_name the option name to match against
+      # @param [ Proc ] block the handler to execute when the option is
+      #   provided.
+      #
+      # @since 2.1.0
+      def option(option_name, &block)
+        options[option_name] = block
+      end
+
+      # Return a map of custom option names to their handlers.
+      #
+      # @example
+      #   Mongoid::Fields.options
+      #   # => { :required => #<Proc:0x00000100976b38> }
+      #
+      # @return [ Hash ] the option map
+      #
+      # @since 2.1.0
+      def options
+        @options ||= {}
+      end
     end
 
     module ClassMethods #:nodoc
 
-      # Defines all the fields that are accessable on the Document
+      # Defines all the fields that are accessible on the Document
       # For each field that is defined, a getter and setter will be
       # added as an instance method to the Document.
       #
@@ -26,52 +98,20 @@ module Mongoid #:nodoc
       # @option options [ Class ] :type The type of the field.
       # @option options [ String ] :label The label for the field.
       # @option options [ Object, Proc ] :default The field's default
+      #
+      # @return [ Field ] The generated field
       def field(name, options = {})
-        access = name.to_s
-        set_field(access, options)
-        attr_protected name if options[:accessible] == false
-      end
-
-      # Return the fields for this class.
-      #
-      # @example Get the fields.
-      #   Person.fields
-      #
-      # @return [ Hash ] The fields for this document.
-      #
-      # @since 2.0.0.rc.6
-      def fields
-        @fields ||= {}
-      end
-
-      # Set the fields for the class.
-      #
-      # @example Set the fields.
-      #   Person.fields = fields
-      #
-      # @param [ Hash ] fields The hash of fields to set.
-      #
-      # @since 2.0.0.rc.6
-      def fields=(fields)
-        @fields = fields
-      end
-
-      # Returns the default values for the fields on the document.
-      #
-      # @example Get the defaults.
-      #   Person.defaults
-      #
-      # @return [ Hash ] The field defaults.
-      def defaults
-        fields.inject({}) do |defs, (field_name,field)|
-          next(defs) if field.default.nil?
-          defs[field_name.to_s] = field.default
-          defs
+        named = name.to_s
+        check_field_name!(name)
+        add_field(named, options).tap do
+          descendants.each do |subclass|
+            subclass.add_field(named, options)
+          end
         end
       end
 
       # When inheriting, we want to copy the fields from the parent class and
-      # set the on the child to start, mimicing the behaviour of the old
+      # set the on the child to start, mimicking the behaviour of the old
       # class_inheritable_accessor that was deprecated in Rails edge.
       #
       # @example Inherit from this class.
@@ -81,7 +121,41 @@ module Mongoid #:nodoc
       #
       # @since 2.0.0.rc.6
       def inherited(subclass)
-        subclass.fields = fields.dup
+        super
+        subclass.defaults, subclass.fields = defaults.dup, fields.dup
+      end
+
+      # Is the field with the provided name a BSON::ObjectId?
+      #
+      # @example Is the field a BSON::ObjectId?
+      #   Person.object_id_field?(:name)
+      #
+      # @param [ String, Symbol ] name The name of the field.
+      #
+      # @return [ true, false ] If the field is a BSON::ObjectId.
+      #
+      # @since 2.2.0
+      def object_id_field?(name)
+        field_name = name.to_s
+        field_name = "_id" if field_name == "id"
+        field = fields[field_name]
+        field ? field.object_id_field? : false
+      end
+
+      # Replace a field with a new type.
+      #
+      # @example Replace the field.
+      #   Model.replace_field("_id", String)
+      #
+      # @param [ String ] name The name of the field.
+      # @param [ Class ] type The new type of field.
+      #
+      # @return [ Serializable ] The new field.
+      #
+      # @since 2.1.0
+      def replace_field(name, type)
+        defaults.delete_one(name)
+        add_field(name, fields[name].options.merge(:type => type))
       end
 
       protected
@@ -89,15 +163,59 @@ module Mongoid #:nodoc
       # Define a field attribute for the +Document+.
       #
       # @example Set the field.
-      #   Person.set_field(:name, :default => "Test")
+      #   Person.add_field(:name, :default => "Test")
       #
       # @param [ Symbol ] name The name of the field.
       # @param [ Hash ] options The hash of options.
-      def set_field(name, options = {})
+      def add_field(name, options = {})
         meth = options.delete(:as) || name
-        fields[name] = Field.new(name, options)
-        create_accessors(name, meth, options)
-        add_dirty_methods(name)
+        type = options[:localize] ? Fields::Internal::Localized : options[:type]
+        Mappings.for(type, options[:identity]).instantiate(name, options).tap do |field|
+          fields[name] = field
+          defaults << name unless field.default_val.nil?
+          create_accessors(name, meth, options)
+          process_options(field)
+          define_attribute_method(name)
+        end
+      end
+
+      # Run through all custom options stored in Mongoid::Fields.options and
+      # execute the handler if the option is provided.
+      #
+      # @example
+      #   Mongoid::Fields.option :custom do
+      #     puts "called"
+      #   end
+      #
+      #   field = Mongoid::Fields.new(:test, :custom => true)
+      #   Person.process_options(field)
+      #   # => "called"
+      #
+      # @param [ Field ] field the field to process
+      def process_options(field)
+        field_options = field.options
+
+        Fields.options.each_pair do |option_name, handler|
+          if field_options.has_key?(option_name)
+            handler.call(self, field, field_options[option_name])
+          end
+        end
+      end
+
+      # Determine if the field name is allowed, if not raise an error.
+      #
+      # @example Check the field name.
+      #   Model.check_field_name!(:collection)
+      #
+      # @param [ Symbol ] name The field name.
+      #
+      # @raise [ Errors::InvalidField ] If the name is not allowed.
+      #
+      # @since 2.1.8
+      def check_field_name!(name)
+        if Mongoid.destructive_fields.include?(name)
+          raise Errors::InvalidField.new(name)
+        end
       end
 
       # Create the field accessors.
@@ -112,12 +230,39 @@ module Mongoid #:nodoc
       # @param [ Symbol ] meth The name of the accessor.
       # @param [ Hash ] options The options.
       def create_accessors(name, meth, options = {})
+        field = fields[name]
         generated_field_methods.module_eval do
-          define_method(meth) { read_attribute(name) }
-          define_method("#{meth}=") { |value| write_attribute(name, value) }
+          if field.cast_on_read?
+            define_method(meth) do
+              field.deserialize(read_attribute(name))
+            end
+          else
+            define_method(meth) do
+              read_attribute(name).tap do |value|
+                if value.is_a?(Array) || value.is_a?(Hash)
+                  unless changed_attributes.include?(name)
+                    changed_attributes[name] = value.clone
+                  end
+                end
+              end
+            end
+          end
+          define_method("#{meth}=") do |value|
+            write_attribute(name, value)
+          end
           define_method("#{meth}?") do
             attr = read_attribute(name)
             (options[:type] == Boolean) ? attr == true : attr.present?
+          end
+
+          if options[:localize]
+            define_method("#{meth}_translations") do
+              attributes[name]
+            end
+            define_method("#{meth}_translations=") do |value|
+              attribute_will_change!(name)
+              attributes[name] = value
+            end
           end
         end
       end

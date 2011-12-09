@@ -14,27 +14,31 @@ module Mongoid #:nodoc:
       #   person.process(:title => "sir", :age => 40)
       #
       # @param [ Hash ] attrs The attributes to set.
+      # @param [ Symbol ] role A role for scoped mass assignment.
+      # @param [ Boolean ] guard_protected_attributes False to skip mass assignment protection.
       #
       # @since 2.0.0.rc.7
-      def process(attrs = nil)
-        sanitize_for_mass_assignment(attrs || {}).each_pair do |key, value|
+      def process(attrs = nil, role = :default, guard_protected_attributes = true)
+        attrs ||= {}
+        attrs = sanitize_for_mass_assignment(attrs, role) if guard_protected_attributes
+        attrs.each_pair do |key, value|
           next if pending_attribute?(key, value)
           process_attribute(key, value)
         end
         yield self if block_given?
-        process_pending and setup_modifications
+        process_pending
       end
 
       protected
 
-      # If the key provided a relation or a nested attribute, where we have to
-      # hold off on the setting of the attribute until everything else has been
-      # set?
+      # If the key provided is the name of a relation or a nested attribute, we
+      # need to wait until all other attributes are set before processing
+      # these.
       #
       # @example Is the attribute pending?
       #   document.pending_attribute?(:name, "Durran")
       #
-      # @param [ Synbol ] key The name of the attribute.
+      # @param [ Symbol ] key The name of the attribute.
       # @param [ Object ] value The value of the attribute.
       #
       # @return [ true, false ] True if pending, false if not.
@@ -132,7 +136,7 @@ module Mongoid #:nodoc:
           if value.is_a?(Hash)
             metadata.nested_builder(value, {}).build(self)
           else
-            send("#{name}=", value, :binding => true)
+            send("#{name}=", value)
           end
         end
       end

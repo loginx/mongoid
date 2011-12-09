@@ -2,29 +2,49 @@ require 'spec_helper'
 
 describe Mongoid::DefaultScope do
 
-  let(:obj1) { DefaultScopeTestModel.create(:name => "C", :green => true) }
-  let(:obj2) { DefaultScopeTestModel.create(:name => "B", :green => true) }
-  let(:obj3) { DefaultScopeTestModel.create(:name => "A", :green => false) }
+  before do
+    [ Person, Tree ].each(&:delete_all)
+  end
 
-  before(:all) do
-    class DefaultScopeTestModel
-      include Mongoid::Document
+  context "when providing a default scope on root documents" do
 
-      field :name
-      field :green, :type => Boolean
-
-      scope :verdant, where(:green => true)
-      default_scope asc(:name)
+    let!(:fir) do
+      Tree.create(:name => "Fir",   :evergreen => true )
     end
 
-    obj1; obj2; obj3
+    let!(:pine) do
+      Tree.create(:name => "Pine",  :evergreen => true )
+    end
+
+    let!(:birch) do
+      Tree.create(:name => "Birch", :evergreen => false)
+    end
+
+    it "returns them in the correct order" do
+      Tree.all.entries.should == [ birch, fir, pine ]
+    end
+
+    it "respects other scopes" do
+      Tree.verdant.entries.should == [ fir, pine ]
+    end
   end
 
-  it "returns them in the correct order" do
-    DefaultScopeTestModel.all.entries.should == [ obj3, obj2, obj1 ]
-  end
+  context "when providing a default scope on an embedded document" do
 
-  it "respects other scopes" do
-    DefaultScopeTestModel.verdant.entries.should == [ obj2, obj1 ]
+    let!(:person) do
+      Person.create(:ssn => "111-11-1111")
+    end
+
+    let!(:tron) do
+      person.videos.create(:title => "Tron")
+    end
+
+    let!(:bladerunner) do
+      person.videos.create(:title => "Bladerunner")
+    end
+
+    it "respects the default scope" do
+      person.reload.videos.all.should == [ bladerunner, tron ]
+    end
   end
 end

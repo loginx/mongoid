@@ -16,12 +16,8 @@ module Mongoid # :nodoc:
           # @return [ Document ] A single document.
           def build(type = nil)
             return object unless query?
-            if object.is_a?(Hash)
-              return Mongoid::Factory.build(metadata.klass, object)
-            end
-            metadata.klass.first(
-              :conditions => { metadata.foreign_key => object }
-            )
+            return nil if base.new_record?
+            metadata.criteria(Conversions.flag(object, metadata)).from_map_or_db
           end
         end
       end

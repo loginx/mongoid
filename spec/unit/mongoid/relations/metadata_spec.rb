@@ -12,9 +12,57 @@ describe Mongoid::Relations::Metadata do
       stub
     end
 
+    let(:base) do
+      stub
+    end
+
     it "returns the builder from the relation" do
-      metadata.builder(object).should
+      metadata.builder(base, object).should
         be_a_kind_of(Mongoid::Relations::Builders::Embedded::One)
+    end
+  end
+
+  describe "#cascading_callbacks?" do
+
+    context "when the option is true" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Embedded::Many,
+          :cascade_callbacks => true
+        )
+      end
+
+      it "returns true" do
+        metadata.should be_cascading_callbacks
+      end
+    end
+
+    context "when the option is false" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Embedded::Many,
+          :cascade_callbacks => false
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_cascading_callbacks
+      end
+    end
+
+    context "when the option is nil" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Embedded::Many
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_cascading_callbacks
+      end
     end
   end
 
@@ -23,7 +71,10 @@ describe Mongoid::Relations::Metadata do
     context "when no dependent option is set" do
 
       let(:metadata) do
-        described_class.new(:name => :posts)
+        described_class.new(
+          :name => :posts,
+          :relation => Mongoid::Relations::Referenced::Many
+        )
       end
 
       it "returns nil" do
@@ -34,7 +85,11 @@ describe Mongoid::Relations::Metadata do
     context "when dependent is delete" do
 
       let(:metadata) do
-        described_class.new(:name => :posts, :dependent => :delete)
+        described_class.new(
+          :name => :posts,
+          :relation => Mongoid::Relations::Referenced::Many,
+          :dependent => :delete
+        )
       end
 
       it "returns the delete strategy" do
@@ -46,7 +101,11 @@ describe Mongoid::Relations::Metadata do
     context "when dependent is destroy" do
 
       let(:metadata) do
-        described_class.new(:name => :posts, :dependent => :destroy)
+        described_class.new(
+          :name => :posts,
+          :relation => Mongoid::Relations::Referenced::Many,
+          :dependent => :destroy
+        )
       end
 
       it "returns the destroy strategy" do
@@ -58,7 +117,11 @@ describe Mongoid::Relations::Metadata do
     context "when dependent is nullify" do
 
       let(:metadata) do
-        described_class.new(:name => :posts, :dependent => :nullify)
+        described_class.new(
+          :name => :posts,
+          :relation => Mongoid::Relations::Referenced::Many,
+          :dependent => :nullify
+        )
       end
 
       it "returns the nullify strategy" do
@@ -71,7 +134,10 @@ describe Mongoid::Relations::Metadata do
   describe "#constraint" do
 
     let(:metadata) do
-      described_class.new(:class_name => "Person")
+      described_class.new(
+        :relation => Mongoid::Relations::Referenced::Many,
+        :class_name => "Person"
+      )
     end
 
     it "returns the constraint object" do
@@ -83,12 +149,32 @@ describe Mongoid::Relations::Metadata do
 
     context "when class_name provided" do
 
-      let(:metadata) do
-        described_class.new(:class_name => "Person")
+      context "when the class name contains leading ::" do
+
+        let(:metadata) do
+          described_class.new(
+            :relation => Mongoid::Relations::Referenced::Many,
+            :class_name => "::Person"
+          )
+        end
+
+        it "returns the stripped class name" do
+          metadata.class_name.should eq("Person")
+        end
       end
 
-      it "constantizes the class name" do
-        metadata.class_name.should == "Person"
+      context "when the class name has no prefix" do
+
+        let(:metadata) do
+          described_class.new(
+            :relation => Mongoid::Relations::Referenced::Many,
+            :class_name => "Person"
+          )
+        end
+
+        it "constantizes the class name" do
+          metadata.class_name.should == "Person"
+        end
       end
     end
 
@@ -97,7 +183,7 @@ describe Mongoid::Relations::Metadata do
       context "when association name is singular" do
 
         let(:relation) do
-          stub(:macro => :embeds_one)
+          Mongoid::Relations::Embedded::One
         end
 
         let(:metadata) do
@@ -112,7 +198,7 @@ describe Mongoid::Relations::Metadata do
       context "when association name is plural" do
 
         let(:relation) do
-          stub(:macro => :embeds_many)
+          Mongoid::Relations::Embedded::Many
         end
 
         let(:metadata) do
@@ -126,16 +212,44 @@ describe Mongoid::Relations::Metadata do
     end
   end
 
+  describe "#destructive?" do
+
+    context "when the relation has a destructive dependent option" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many,
+          :dependent => :destroy
+        )
+      end
+
+      it "returns true" do
+        metadata.should be_destructive
+      end
+    end
+
+    context "when no dependent option" do
+
+      let(:metadata) do
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_destructive
+      end
+    end
+  end
+
   describe "#embedded?" do
 
     context "when the relation is embedded" do
 
       let(:metadata) do
-        described_class.new(:relation => relation)
-      end
-
-      let(:relation) do
-        stub(:macro => :embeds_one)
+        described_class.new(
+          :relation => Mongoid::Relations::Embedded::Many
+        )
       end
 
       it "returns true" do
@@ -146,11 +260,9 @@ describe Mongoid::Relations::Metadata do
     context "when the relation is not embedded" do
 
       let(:metadata) do
-        described_class.new(:relation => relation)
-      end
-
-      let(:relation) do
-        stub(:macro => :references_one)
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many
+        )
       end
 
       it "returns false" do
@@ -162,7 +274,10 @@ describe Mongoid::Relations::Metadata do
   describe "#extension" do
 
     let(:metadata) do
-      described_class.new(:extend => :value)
+      described_class.new(
+        :relation => Mongoid::Relations::Referenced::Many,
+        :extend => :value
+      )
     end
 
     it "returns the extend property" do
@@ -175,7 +290,10 @@ describe Mongoid::Relations::Metadata do
     context "when an extends property exists" do
 
       let(:metadata) do
-        described_class.new(:extend => :value)
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many,
+          :extend => :value
+        )
       end
 
       it "returns true" do
@@ -186,7 +304,9 @@ describe Mongoid::Relations::Metadata do
     context "when the extend option is nil" do
 
       let(:metadata) do
-        described_class.new
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::Many
+        )
       end
 
       it "returns false" do
@@ -286,6 +406,25 @@ describe Mongoid::Relations::Metadata do
 
             it "returns the foreign_key" do
               metadata.foreign_key.should == "follower_ids"
+            end
+          end
+
+          context "when the class is namespaced" do
+            let(:metadata) do
+              described_class.new(
+                :name => :bananas,
+                :relation => Mongoid::Relations::Referenced::ManyToMany,
+                :inverse_class_name => "Fruits::Apple",
+                :class_name => "Fruits::Banana"
+              )
+            end
+
+            it "returns the foreign_key without the module name" do
+              metadata.foreign_key.should == "banana_ids"
+            end
+
+            it "returns the inverse_foreign_key without the module name" do
+              metadata.inverse_foreign_key.should == "apple_ids"
             end
           end
         end
@@ -460,15 +599,14 @@ describe Mongoid::Relations::Metadata do
         "  cyclic:               #{metadata.cyclic || "No"},\n" <<
         "  dependent:            #{metadata.dependent || "None"},\n" <<
         "  inverse_of:           #{metadata.inverse_of || "N/A"},\n" <<
-        "  inverse_setter:       #{metadata.inverse_setter},\n" <<
-        "  inverse_type:         #{metadata.inverse_type || "N/A"},\n" <<
-        "  inverse_type_setter:  #{metadata.inverse_type_setter || "N/A"},\n" <<
         "  key:                  #{metadata.key},\n" <<
         "  macro:                #{metadata.macro},\n" <<
         "  name:                 #{metadata.name},\n" <<
+        "  order:                #{metadata.order.inspect || "No"},\n" <<
         "  polymorphic:          #{metadata.polymorphic? ? "Yes" : "No"},\n" <<
         "  relation:             #{metadata.relation},\n" <<
-        "  setter:               #{metadata.setter}>\n"
+        "  setter:               #{metadata.setter},\n" <<
+        "  versioned:            #{metadata.versioned? || "No"}>\n"
     end
   end
 
@@ -545,7 +683,10 @@ describe Mongoid::Relations::Metadata do
     context "when an index property exists" do
 
       let(:metadata) do
-        described_class.new(:index => true)
+        described_class.new(
+          :index => true,
+          :relation => Mongoid::Relations::Referenced::In
+        )
       end
 
       it "returns true" do
@@ -556,18 +697,23 @@ describe Mongoid::Relations::Metadata do
     context "when the index option is nil" do
 
       let(:metadata) do
-        described_class.new
+        described_class.new(
+          :relation => Mongoid::Relations::Referenced::In
+        )
       end
 
       it "returns false" do
-        metadata.index?.should == false
+        metadata.indexed?.should == false
       end
     end
 
     context "when the index option is false" do
 
       let(:metadata) do
-        described_class.new(:index => false)
+        described_class.new(
+          :index => false,
+          :relation => Mongoid::Relations::Referenced::In
+        )
       end
 
       it "returns false" do
@@ -580,16 +726,49 @@ describe Mongoid::Relations::Metadata do
 
     context "when an inverse relation exists" do
 
-      context "when inverse_of is defined" do
+      context "when multiple relations against the same class exist" do
 
         let(:metadata) do
           described_class.new(
-            :inverse_of => :crazy_name
+            :inverse_class_name => "User",
+            :name => :shop,
+            :relation => Mongoid::Relations::Referenced::One
           )
         end
 
-        it "returns the name of the inverse_of property" do
-          metadata.inverse.should == :crazy_name
+        it "returns the name of the inverse with the matching inverse of" do
+          metadata.inverse.should eq(:user)
+        end
+      end
+
+      context "when inverse_of is defined" do
+
+        context "when inverse_of is a symbol" do
+
+          let(:metadata) do
+            described_class.new(
+              :inverse_of => nil,
+              :relation => Mongoid::Relations::Referenced::In
+            )
+          end
+
+          it "returns nil" do
+            metadata.inverse.should be_nil
+          end
+        end
+
+        context "when inverse_of is nil" do
+
+          let(:metadata) do
+            described_class.new(
+              :inverse_of => :crazy_name,
+              :relation => Mongoid::Relations::Referenced::In
+            )
+          end
+
+          it "returns the name of the inverse_of property" do
+            metadata.inverse.should == :crazy_name
+          end
         end
       end
 
@@ -599,7 +778,8 @@ describe Mongoid::Relations::Metadata do
           described_class.new(
             :name => :pet,
             :class_name => "Animal",
-            :inverse_class_name => "Person"
+            :inverse_class_name => "Person",
+            :relation => Mongoid::Relations::Referenced::In
           )
         end
 
@@ -614,7 +794,8 @@ describe Mongoid::Relations::Metadata do
           described_class.new(
             :name => :addresses,
             :as => :addressable,
-            :inverse_class_name => "Person"
+            :inverse_class_name => "Person",
+            :relation => Mongoid::Relations::Referenced::Many
           )
         end
 
@@ -629,7 +810,8 @@ describe Mongoid::Relations::Metadata do
           described_class.new(
             :name => :addressable,
             :polymorphic => true,
-            :inverse_class_name => "Address"
+            :inverse_class_name => "Address",
+            :relation => Mongoid::Relations::Referenced::In
           )
         end
 
@@ -640,18 +822,38 @@ describe Mongoid::Relations::Metadata do
 
       context "when in a cyclic relation" do
 
-        let(:metadata) do
-          described_class.new(
-            :name => :parent_role,
-            :class_name => "Role",
-            :inverse_class_name => "Role",
-            :relation => Mongoid::Relations::Embedded::In,
-            :cyclic => true
-          )
+        context "when the base name is included in the plural form" do
+
+          let(:metadata) do
+            described_class.new(
+              :name => :parent_role,
+              :class_name => "Role",
+              :inverse_class_name => "Role",
+              :relation => Mongoid::Relations::Embedded::In,
+              :cyclic => true
+            )
+          end
+
+          it "returns the name of the relation" do
+            metadata.inverse(Role.new).should == :child_roles
+          end
         end
 
-        it "returns the name of the relation" do
-          metadata.inverse(Role.new).should == :child_roles
+        context "when the base name is not included in the plural form" do
+
+          let(:metadata) do
+            described_class.new(
+              :name => :parent_entry,
+              :class_name => "Entry",
+              :inverse_class_name => "Entry",
+              :relation => Mongoid::Relations::Embedded::In,
+              :cyclic => true
+            )
+          end
+
+          it "returns the name of the relation" do
+            metadata.inverse(Entry.new).should == :child_entries
+          end
         end
       end
     end
@@ -675,12 +877,31 @@ describe Mongoid::Relations::Metadata do
         metadata.inverse_foreign_key.should == "person_ids"
       end
     end
+
+    context "when the inverse_of is nil" do
+
+      let(:metadata) do
+        described_class.new(
+          :name => :blogs,
+          :class_name => "Blog",
+          :relation => Mongoid::Relations::Referenced::ManyToMany,
+          :inverse_of => nil
+        )
+      end
+
+      it "returns nil" do
+        metadata.inverse_foreign_key.should be_nil
+      end
+    end
   end
 
   context "#inverse_klass" do
 
     let(:metadata) do
-      described_class.new(:inverse_class_name => "Person")
+      described_class.new(
+        :inverse_class_name => "Person",
+        :relation => Mongoid::Relations::Referenced::In
+      )
     end
 
     it "constantizes the inverse_class_name" do
@@ -696,7 +917,8 @@ describe Mongoid::Relations::Metadata do
         described_class.new(
           :name => :pet,
           :class_name => "Animal",
-          :inverse_class_name => "Person"
+          :inverse_class_name => "Person",
+          :relation => Mongoid::Relations::Referenced::In
         )
       end
 
@@ -812,18 +1034,77 @@ describe Mongoid::Relations::Metadata do
     end
   end
 
-  context "#klass" do
-
+  context "#order" do
     let(:metadata) do
-      described_class.new(:class_name => "Address")
+      described_class.new(
+        :order => :rating.asc,
+        :relation => Mongoid::Relations::Referenced::Many
+      )
     end
 
-    it "constantizes the class_name" do
-      metadata.klass.should == Address
+    it "returns order criteria" do
+      metadata.order.should == :rating.asc
+    end
+
+  end
+
+  describe "#klass" do
+
+    context "when the class name is not namespaced" do
+
+      let(:metadata) do
+        described_class.new(
+          :class_name => "Address",
+          :relation => Mongoid::Relations::Embedded::Many
+        )
+      end
+
+      it "constantizes the class_name" do
+        metadata.klass.should eq(Address)
+      end
+    end
+
+    context "when the class name is prepended with ::" do
+
+      let(:metadata) do
+        described_class.new(
+          :class_name => "::Address",
+          :relation => Mongoid::Relations::Embedded::Many
+        )
+      end
+
+      it "returns the class" do
+        metadata.klass.should eq(Address)
+      end
     end
   end
 
-  context "#macro" do
+  describe "#many?" do
+
+    context "when the relation is a many" do
+
+      let(:metadata) do
+        described_class.new(:relation => Mongoid::Relations::Embedded::Many)
+      end
+
+      it "returns true" do
+        metadata.should be_many
+      end
+    end
+
+    context "when the relation is not a many" do
+
+      let(:metadata) do
+        described_class.new(:relation => Mongoid::Relations::Embedded::One)
+      end
+
+      it "returns false" do
+        metadata.should_not be_many
+      end
+    end
+  end
+
+  describe "#macro" do
 
     let(:metadata) do
       described_class.new(:relation => Mongoid::Relations::Embedded::One)
@@ -854,17 +1135,112 @@ describe Mongoid::Relations::Metadata do
     end
   end
 
+  describe "#validate?" do
+
+    context "when validate is provided" do
+
+      context "when validate is true" do
+
+        let(:metadata) do
+          described_class.new(
+            :name => :posts,
+            :inverse_class_name => "Post",
+            :relation => Mongoid::Relations::Referenced::Many,
+            :validate => true
+          )
+        end
+
+        it "returns true" do
+          metadata.validate?.should eq(true)
+        end
+      end
+
+      context "when validate is false" do
+
+        let(:metadata) do
+          described_class.new(
+            :name => :posts,
+            :inverse_class_name => "Post",
+            :relation => Mongoid::Relations::Referenced::Many,
+            :validate => false
+          )
+        end
+
+        it "returns false" do
+          metadata.validate?.should eq(false)
+        end
+      end
+    end
+
+    context "when validate is not provided" do
+
+      let(:metadata) do
+        described_class.new(
+          :name => :posts,
+          :inverse_class_name => "Post",
+          :relation => Mongoid::Relations::Referenced::Many
+        )
+      end
+
+      it "returns the relation default" do
+        metadata.validate?.should eq(true)
+      end
+    end
+  end
+
+  describe "#versioned?" do
+
+    context "when versioned is true" do
+
+      let(:metadata) do
+        described_class.new(
+          :name => :versions,
+          :relation => Mongoid::Relations::Embedded::Many,
+          :versioned => true
+        )
+      end
+
+      it "returns true" do
+        metadata.should be_versioned
+      end
+    end
+
+    context "when versioned is false" do
+
+      let(:metadata) do
+        described_class.new(
+          :name => :versions,
+          :relation => Mongoid::Relations::Embedded::Many,
+          :versioned => false
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_versioned
+      end
+    end
+
+    context "when versioned is nil" do
+
+      let(:metadata) do
+        described_class.new(
+          :name => :versions,
+          :relation => Mongoid::Relations::Embedded::Many
+        )
+      end
+
+      it "returns false" do
+        metadata.should_not be_versioned
+      end
+    end
+  end
+
   context "properties" do
 
     PROPERTIES = [
-      "autosave",
+      "as",
       "cyclic",
-      "dependent",
-      "inverse_class_name",
-      "inverse_of",
       "name",
-      "polymorphic",
-      "relation",
       "order"
     ]
 
@@ -873,7 +1249,10 @@ describe Mongoid::Relations::Metadata do
       describe "##{property}" do
 
         let(:metadata) do
-          described_class.new(property.to_sym => :value)
+          described_class.new(
+            property.to_sym => :value,
+            :relation => Mongoid::Relations::Embedded::Many
+          )
         end
 
         it "returns the #{property} property" do
@@ -886,7 +1265,10 @@ describe Mongoid::Relations::Metadata do
         context "when a #{property} property exists" do
 
           let(:metadata) do
-            described_class.new(property.to_sym => :value)
+            described_class.new(
+              property.to_sym => :value,
+              :relation => Mongoid::Relations::Embedded::Many
+            )
           end
 
           it "returns true" do
@@ -897,7 +1279,9 @@ describe Mongoid::Relations::Metadata do
         context "when the #{property} property is nil" do
 
           let(:metadata) do
-            described_class.new
+            described_class.new(
+              :relation => Mongoid::Relations::Embedded::Many
+            )
           end
 
           it "returns false" do

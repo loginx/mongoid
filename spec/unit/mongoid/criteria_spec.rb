@@ -237,6 +237,28 @@ describe Mongoid::Criteria do
       end
     end
 
+    describe "#size" do
+
+      before do
+        context.expects(:size).returns(10)
+      end
+
+      it "delegates to the context" do
+        criteria.size.should == 10
+      end
+    end
+
+    describe "#length" do
+
+      before do
+        context.expects(:length).returns(10)
+      end
+
+      it "delegates to the context" do
+        criteria.length.should == 10
+      end
+    end
+
     describe "#exists?" do
 
       context "when there are documents in the db" do
@@ -270,6 +292,44 @@ describe Mongoid::Criteria do
 
       it "delegates to the context" do
         criteria.first.should == []
+      end
+    end
+
+    describe "#freeze" do
+
+      context "when the context has been initialized" do
+
+        let(:frozen) do
+          described_class.new(Person)
+        end
+
+        before do
+          frozen.context
+          frozen.freeze
+        end
+
+        it "does not raise an error on iteration" do
+          expect {
+            frozen.entries
+          }.to_not raise_error
+        end
+      end
+
+      context "when the context has not been initialized" do
+
+        let(:frozen) do
+          described_class.new(Person)
+        end
+
+        before do
+          frozen.freeze
+        end
+
+        it "does not raise an error on iteration" do
+          expect {
+            frozen.entries
+          }.to_not raise_error
+        end
       end
     end
 
@@ -328,39 +388,6 @@ describe Mongoid::Criteria do
       end
     end
 
-    describe "#page" do
-
-      before do
-        context.expects(:page).returns(1)
-      end
-
-      it "delegates to the context" do
-        criteria.page.should == 1
-      end
-    end
-
-    describe "#paginate" do
-
-      before do
-        context.expects(:paginate).returns([])
-      end
-
-      it "delegates to the context" do
-        criteria.paginate.should == []
-      end
-    end
-
-    describe "#per_page" do
-
-      before do
-        context.expects(:per_page).returns(20)
-      end
-
-      it "delegates to the context" do
-        criteria.per_page.should == 20
-      end
-    end
-
     describe "#sum" do
 
       before do
@@ -373,11 +400,10 @@ describe Mongoid::Criteria do
     end
   end
 
-
   describe "#clone" do
 
     let(:criteria) do
-      Person.only(:title).where(:age.gt => 30).skip(10)
+      Person.only(:title).where(:age.gt => 30).skip(10).asc(:age)
     end
 
     let(:copy) do
@@ -460,27 +486,11 @@ describe Mongoid::Criteria do
     end
 
     let(:criteria) do
-      Mongoid::Criteria.new(Person).extras(:page => 1, :per_page => 20)
+      Mongoid::Criteria.new(Person)
     end
 
     before do
       Person.expects(:collection).returns(collection)
-    end
-
-    context "filtering" do
-
-      before do
-        collection.expects(:find).with(criteria.selector, criteria.options).returns([])
-        criteria.entries
-      end
-
-      it "filters out empty page params" do
-        criteria.options[:page].should be_nil
-      end
-
-      it "filters out empty per page params" do
-        criteria.options[:per_page].should be_nil
-      end
     end
 
     context "when type is :all" do
@@ -713,6 +723,71 @@ describe Mongoid::Criteria do
         end
       end
     end
+
+    context "with a conditions hash" do
+
+      context "when the other has a selector and options" do
+
+        let(:other) do
+          { :conditions => { :name => "Chloe" }, :sort => [[ :name, :asc ]] }
+        end
+
+        let(:selector) do
+          { :title => "Sir", :name => "Chloe" }
+        end
+
+        let(:options) do
+          { :skip => 40, :sort => [[:name, :asc]] }
+        end
+
+        let(:crit) do
+          criteria.where(:title => "Sir").skip(40)
+        end
+
+        let(:merged) do
+          crit.merge(other)
+        end
+
+        it "merges the selector" do
+          merged.selector.should == selector
+        end
+
+        it "merges the options" do
+          merged.options.should == options
+        end
+      end
+
+      context "when the other has no conditions" do
+
+        let(:other) do
+          { :sort => [[ :name, :asc ]] }
+        end
+
+        let(:selector) do
+          { :title => "Sir" }
+        end
+
+        let(:options) do
+          { :skip => 40, :sort => [[:name, :asc]] }
+        end
+
+        let(:crit) do
+          criteria.where(:title => "Sir").skip(40)
+        end
+
+        let(:merged) do
+          crit.merge(other)
+        end
+
+        it "merges the selector" do
+          merged.selector.should == selector
+        end
+
+        it "merges the options" do
+          merged.options.should == options
+        end
+      end
+    end
   end
 
   describe "#method_missing" do
@@ -804,6 +879,50 @@ describe Mongoid::Criteria do
     end
   end
 
+  describe "#respond_to?" do
+
+    let(:criteria) do
+      Mongoid::Criteria.new(Person)
+    end
+
+    before do
+      Person.stubs(:ages => [])
+    end
+
+    it "is true when asking about a model's class method" do
+      criteria.respond_to?(:ages).should be_true
+    end
+
+    it "is false when asking about a model's private class method even when including private methods" do
+      criteria.respond_to?(:alias_method, true).should be_false
+    end
+
+    it "is true when asking about a criteria's entries' instance method" do
+      criteria.respond_to?(:join).should be_true
+    end
+
+    it "is false when asking about a criteria's entries' private instance methods without including private methods" do
+      criteria.respond_to?(:fork).should be_false
+    end
+
+    it "is false when asking about a criteria's entries' private instance methods when including private methods" do
+      criteria.respond_to?(:fork, true).should be_true
+    end
+
+    it "is true when asking about a criteria instance method" do
+      criteria.respond_to?(:context).should be_true
+    end
+
+    it "is false when asking about a private criteria instance method without including private methods" do
+      criteria.respond_to?(:puts).should be_false
+    end
+
+    it "is true when asking about a private criteria instance method when including private methods" do
+      criteria.respond_to?(:puts, true).should be_true
+    end
+
+  end
+
   describe "#scoped" do
 
     context "when the options contain sort criteria" do
@@ -818,20 +937,21 @@ describe Mongoid::Criteria do
     end
   end
 
-  describe ".translate" do
+  describe "#search" do
+
+    let(:criteria) do
+      Person.criteria
+    end
 
     context "with a single argument" do
 
-      let(:criteria) do
-        stub
-      end
+      context "when the arg is nil" do
 
-      before do
-        Person.stubs(:criteria).returns(criteria)
-      end
-
-      let(:document) do
-        stub
+        it "adds the id selector" do
+          expect {
+            criteria.search(nil)
+          }.to raise_error(Mongoid::Errors::InvalidFind)
+        end
       end
 
       context "when the arg is a string" do
@@ -840,12 +960,10 @@ describe Mongoid::Criteria do
           BSON::ObjectId.new.to_s
         end
 
-        before do
-          criteria.expects(:id_criteria).with(id).returns(document)
-        end
-
-        it "delegates to #id_criteria" do
-          Mongoid::Criteria.translate(Person, false, id).should == document
+        it "adds the id selector" do
+          criteria.search(id)[1].selector.should eq(
+            { :_id => BSON::ObjectId.from_string(id) }
+          )
         end
       end
 
@@ -855,12 +973,8 @@ describe Mongoid::Criteria do
           BSON::ObjectId.new
         end
 
-        before do
-          criteria.expects(:id_criteria).with(id).returns(document)
-        end
-
-        it "delegates to #id_criteria" do
-          Mongoid::Criteria.translate(Person, false, id).should == document
+        it "adds the id selector" do
+          criteria.search(id)[1].selector.should eq({ :_id => id })
         end
       end
     end
@@ -873,100 +987,97 @@ describe Mongoid::Criteria do
           []
         end
 
-        let(:documents) do
-          []
-        end
-
         before do
           3.times do
-            ids << BSON::ObjectId.new.to_s
-            documents << stub
+            ids << BSON::ObjectId.new
           end
-          Person.stubs(:criteria).returns(criteria)
-          criteria.expects(:id_criteria).with(ids).returns(documents)
         end
 
         it "delegates to #id_criteria" do
-          Mongoid::Criteria.translate(Person, false, ids).should == documents
+          criteria.search(ids.map(&:to_s))[1].selector.should ==
+            { :_id => { "$in" => ids } }
         end
       end
 
       context "when Person, :conditions => {}" do
 
-        let(:criteria) do
-          Mongoid::Criteria.translate(Person, false, :conditions => { :title => "Test" })
+        let(:crit) do
+          criteria.search(:all, :conditions => { :title => "Test" })[1]
         end
 
         it "returns a criteria with a selector from the conditions" do
-          criteria.selector.should == { :title => "Test" }
+          crit.selector.should == { :title => "Test" }
         end
 
         it "returns a criteria with klass Person" do
-          criteria.klass.should == Person
+          crit.klass.should == Person
         end
       end
 
       context "when Person, :conditions => {:id => id}" do
 
-        let(:criteria) do
-          Mongoid::Criteria.translate(Person, false, :conditions => { :id => "1234e567" })
+        let(:id) do
+          BSON::ObjectId.new
+        end
+
+        let(:crit) do
+          criteria.search(:all, :conditions => { :id => id })[1]
         end
 
         it "returns a criteria with a selector from the conditions" do
-          criteria.selector.should == { :_id => "1234e567" }
+          crit.selector.should == { :_id => id }
         end
 
         it "returns a criteria with klass Person" do
-          criteria.klass.should == Person
+          crit.klass.should == Person
         end
       end
 
       context "when :all, :conditions => {}" do
 
-        let(:criteria) do
-          Mongoid::Criteria.translate(Person, false, :conditions => { :title => "Test" })
+        let(:crit) do
+          criteria.search(:all, :conditions => { :title => "Test" })[1]
         end
 
         it "returns a criteria with a selector from the conditions" do
-          criteria.selector.should == { :title => "Test" }
+          crit.selector.should == { :title => "Test" }
         end
 
         it "returns a criteria with klass Person" do
-          criteria.klass.should == Person
+          crit.klass.should == Person
         end
       end
 
       context "when :last, :conditions => {}" do
 
-        let(:criteria) do
-          Mongoid::Criteria.translate(Person, false, :conditions => { :title => "Test" })
+        let(:crit) do
+          criteria.search(:last, :conditions => { :title => "Test" })[1]
         end
 
         it "returns a criteria with a selector from the conditions" do
-          criteria.selector.should == { :title => "Test" }
+          crit.selector.should == { :title => "Test" }
         end
 
         it "returns a criteria with klass Person" do
-          criteria.klass.should == Person
+          crit.klass.should == Person
         end
       end
 
       context "when options are provided" do
 
-        let(:criteria) do
-          Mongoid::Criteria.translate(
-            Person,
-            false,
+        let(:crit) do
+          criteria.search(
+            :all,
             :conditions => { :title => "Test" }, :skip => 10
-          )
+          )[1]
         end
 
         it "sets the selector" do
-          criteria.selector.should == { :title => "Test" }
+          crit.selector.should == { :title => "Test" }
         end
 
         it "sets the options" do
-          criteria.options.should == { :skip => 10 }
+          crit.options.should == { :skip => 10 }
         end
       end
     end

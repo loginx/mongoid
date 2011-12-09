@@ -32,6 +32,23 @@ module Mongoid # :nodoc:
     module Builders
       extend ActiveSupport::Concern
 
+      private
+
+      # Parse out the attributes and the options from the args passed to a
+      # build_ or create_ methods.
+      #
+      # @example Parse the args.
+      #   doc.parse_args(:name => "Joe")
+      #
+      # @param [ Array ] args The arguments.
+      #
+      # @return [ Array<Hash> ] The attributes and options.
+      #
+      # @since 2.3.4
+      def parse_args(*args)
+        [ args.first || {}, args.size > 1 ? args[1] : {} ]
+      end
+
       module ClassMethods #:nodoc:
 
         # Defines a builder method for an embeds_one relation. This is
@@ -45,11 +62,14 @@ module Mongoid # :nodoc:
         # @return [ Class ] The class being set up.
         #
         # @since 2.0.0.rc.1
-        def builder(name)
+        def builder(name, metadata)
           tap do
             define_method("build_#{name}") do |*args|
-              attributes = (args.any? ? args : []) + [{:binding => true}]
-              send("#{name}=", *attributes)
+              attributes, options = parse_args(*args)
+              document = Factory.build(metadata.klass, attributes, options)
+              _building do
+                send("#{name}=", document).tap {|child| child.run_callbacks(:build) }
+              end
             end
           end
         end
@@ -66,10 +86,12 @@ module Mongoid # :nodoc:
         # @return [ Class ] The class being set up.
         #
         # @since 2.0.0.rc.1
-        def creator(name)
+        def creator(name, metadata)
           tap do
             define_method("create_#{name}") do |*args|
-              send("build_#{name}", *args).tap(&:save)
+              attributes, options = parse_args(*args)
+              document = Factory.build(metadata.klass, attributes, options)
+              send("#{name}=", document).tap { |doc| doc.save }
             end
           end
         end

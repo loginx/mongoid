@@ -30,7 +30,7 @@ describe Mongoid::Criteria do
     end
   end
 
-  describe "#id" do
+  describe "#find" do
 
     context "when using object ids" do
 
@@ -48,11 +48,11 @@ describe Mongoid::Criteria do
       end
 
       it 'should find object with String args' do
-        Person.criteria.id(person.id.to_s).first.should == person
+        Person.find(person.id.to_s).should == person
       end
 
       it 'should find object with BSON::ObjectId  args' do
-        Person.criteria.id(person.id).first.should == person
+        Person.find(person.id).should == person
       end
     end
 
@@ -75,12 +75,12 @@ describe Mongoid::Criteria do
         )
       end
 
-      it 'should find object with String args' do
-        Person.criteria.id(person.id.to_s).first.should == person
+      it 'should find the object with a matching String arg' do
+        Person.find(person.id.to_s).should == person
       end
 
-      it 'should not find object with BSON::ObjectId  args' do
-        Person.criteria.id(BSON::ObjectId(person.id)).first.should == nil
+      it 'should find the object with a matching BSON::ObjectId argument' do
+        Person.find(BSON::ObjectId(person.id)).should eq(person)
       end
     end
   end

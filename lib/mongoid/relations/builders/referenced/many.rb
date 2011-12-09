@@ -16,8 +16,9 @@ module Mongoid # :nodoc:
           # @return [ Array<Document> ] The documents.
           def build(type = nil)
             return object unless query?
-            key = metadata.foreign_key
-            metadata.klass.find(:conditions => { key => object })
+            return [] if object.is_a?(Array)
+            crit = metadata.criteria(Conversions.flag(object, metadata))
+            IdentityMap.get(crit.klass, crit.selector) || crit
           end
         end
       end

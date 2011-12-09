@@ -12,40 +12,42 @@ module Mongoid # :nodoc:
           # the existing relation, a replacement of the relation with a new
           # document, or a removal of the relation.
           #
-          # Example:
+          # @example Build the nested attrs.
+          #   many.build(person)
           #
-          # <tt>many.build(person)</tt>
+          # @param [ Document ] parent The parent document of the relation.
           #
-          # Options:
-          #
-          # parent: The parent document of the relation.
+          # @return [ Array ] The attributes.
           def build(parent)
             @existing = parent.send(metadata.name)
             if over_limit?(attributes)
               raise Errors::TooManyNestedAttributeRecords.new(existing, options[:limit])
             end
-            attributes.each { |attrs| process(attrs[1]) }
+            attributes.each do |attrs|
+              if attrs.respond_to?(:with_indifferent_access)
+                process(parent, attrs)
+              else
+                process(parent, attrs[1])
+              end
+            end
           end
 
-          # Create the new builder for nested attributes on one-to-one
+          # Create the new builder for nested attributes on one-to-many
           # relations.
           #
-          # Example:
+          # @example Initialize the builder.
+          #   One.new(metadata, attributes, options)
           #
-          # <tt>One.new(metadata, attributes, options)</tt>
-          #
-          # Options:
-          #
-          # metadata: The relation metadata
-          # attributes: The attributes hash to attempt to set.
-          # options: The options defined.
-          #
-          # Returns:
-          #
-          # A new builder.
+          # @param [ Metadata ] metadata The relation metadata.
+          # @param [ Hash ] attributes The attributes hash to attempt to set.
+          # @param [ Hash ] options The options defined.
           def initialize(metadata, attributes, options = {})
-            @attributes = attributes.with_indifferent_access.sort do |a, b|
-              a[0] <=> b[0]
+            if attributes.respond_to?(:with_indifferent_access)
+              @attributes = attributes.with_indifferent_access.sort do |a, b|
+                a[0].to_i <=> b[0].to_i
+              end
+            else
+              @attributes = attributes
             end
             @metadata = metadata
             @options = options
@@ -55,17 +57,12 @@ module Mongoid # :nodoc:
 
           # Can the existing relation potentially be deleted?
           #
-          # Example:
+          # @example Is the document destroyable?
+          #   destroyable?({ :_destroy => "1" })
           #
-          # <tt>destroyable?({ :_destroy => "1" })</tt>
+          # @parma [ Hash ] attributes The attributes to pull the flag from.
           #
-          # Options:
-          #
-          # attributes: The attributes to pull the flag from.
-          #
-          # Returns:
-          #
-          # True if the relation can potentially be deleted.
+          # @return [ true, false ] If the relation can potentially be deleted.
           def destroyable?(attributes)
             destroy = attributes.delete(:_destroy)
             [ 1, "1", true, "true" ].include?(destroy) && allow_destroy?
@@ -74,17 +71,12 @@ module Mongoid # :nodoc:
           # Are the supplied attributes of greater number than the supplied
           # limit?
           #
-          # Example:
+          # @example Are we over the set limit?
+          #   builder.over_limit?({ "street" => "Bond" })
           #
-          # <tt>builder.over_limit?({ "street" => "Bond" })</tt>
+          # @param [ Hash ] attributes The attributes being set.
           #
-          # Options:
-          #
-          # attributes: The attributes being set.
-          #
-          # Returns:
-          #
-          # True if a limit supplied and the attributes are of greater number.
+          # @return [ true, false ] If the attributes exceed the limit.
           def over_limit?(attributes)
             limit = options[:limit]
             limit ? attributes.size > limit : false
@@ -93,22 +85,22 @@ module Mongoid # :nodoc:
           # Process each set of attributes one at a time for each potential
           # new, existing, or ignored document.
           #
-          # Example:
+          # @example Process the attributes
+          #   builder.process({ "id" => 1, "street" => "Bond" })
           #
-          # <tt>builder.process({ "id" => 1, "street" => "Bond" })
-          #
-          # Options:
-          #
-          # attrs: The single document attributes to process.
-          def process(attrs)
-            return if reject?(attrs)
-            if attrs[:id]
-              document = existing.find(convert_id(attrs[:id]))
-              destroyable?(attrs) ? document.destroy : document.update_attributes(attrs)
+          # @param [ Hash ] attrs The single document attributes to process.
+          def process(parent, attrs)
+            return if reject?(parent, attrs)
+            if id = attrs.extract_id
+              doc = existing.find(convert_id(id))
+              if destroyable?(attrs)
+                existing.delete(doc)
+                doc.destroy unless doc.embedded?
+              else
+                metadata.embedded? ? doc.attributes = attrs : doc.update_attributes(attrs)
+              end
             else
-              # @todo: Durran: Tell the push not to save the base and call it
-              #   after all processing is done. This is related to #581.
-              existing.push(metadata.klass.new(attrs)) unless destroyable?(attrs)
+              existing.push(Factory.build(metadata.klass, attrs)) unless destroyable?(attrs)
             end
           end
         end

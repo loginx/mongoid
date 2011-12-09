@@ -3,7 +3,7 @@ require "spec_helper"
 describe Mongoid::NestedAttributes do
 
   before do
-    [ Person, Post, Game ].map(&:delete_all)
+    [ Person, Post, Game, Pizza, Topping ].map(&:delete_all)
   end
 
   describe "#initialize" do
@@ -37,6 +37,23 @@ describe Mongoid::NestedAttributes do
 
       it "sets the nested attributes" do
         person.addresses.first.street.should == "Alexanderstr"
+      end
+
+      context "when there are 10 or more child records" do
+
+        let(:person) do
+          Person.new(:addresses => addresses)
+        end
+
+        let(:addresses) do
+          ('0'..'10').inject({}) do |addresses,i|
+            addresses.merge(i => {:number => i})
+          end
+        end
+
+        it "should preserve the order of the children" do
+          person.addresses.map(&:number).should == (0..10).to_a
+        end
       end
     end
 
@@ -124,6 +141,50 @@ describe Mongoid::NestedAttributes do
     context "when the parent document is new" do
 
       context "when the relation is an embeds one" do
+
+        context "when the parent document is persisted" do
+
+          let(:person) do
+            Person.create(:ssn => "465-23-0789")
+          end
+
+          before do
+            Person.send(:undef_method, :name_attributes=)
+            Person.accepts_nested_attributes_for :name, :allow_destroy => true
+          end
+
+          after do
+            Person.send(:undef_method, :name_attributes=)
+            Person.accepts_nested_attributes_for :name
+          end
+
+          context "when setting the child attributes" do
+
+            before do
+              person.name_attributes = { :last_name => "Fischer" }
+            end
+
+            it "sets the child document" do
+              person.name.last_name.should eq("Fischer")
+            end
+
+            it "does not persist the child document" do
+              person.name.should_not be_persisted
+            end
+
+            context "when saving the parent" do
+
+              before do
+                person.save
+                person.reload
+              end
+
+              it "persists the child document" do
+                person.name.should be_persisted
+              end
+            end
+          end
+        end
 
         let(:person) do
           Person.new
@@ -510,6 +571,35 @@ describe Mongoid::NestedAttributes do
             end
           end
         end
+
+        context "when the nested document is invalid" do
+
+          before do
+            person.pet_attributes = { :name => "$$$" }
+          end
+
+          it "propagates invalidity to parent" do
+            person.pet.should_not be_valid
+            person.should_not be_valid
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:canvas) do
+            Canvas.new
+          end
+
+          before do
+            Canvas.send(:undef_method, :writer_attributes=)
+            Canvas.accepts_nested_attributes_for :writer
+            canvas.writer_attributes = { :_type => "HtmlWriter" }
+          end
+
+          it "instantiates an object of the given type" do
+            canvas.writer.class.should == HtmlWriter
+          end
+        end
       end
 
       context "when the relation is embedded in" do
@@ -722,10 +812,85 @@ describe Mongoid::NestedAttributes do
               end
             end
           end
+
+          context "when the nested document is invalid" do
+
+            before do
+              animal.person_attributes = { :ssn => '$$$' }
+            end
+
+            it "does not propagate invalidity to parent" do
+              animal.person.should_not be_valid
+              animal.should be_valid
+            end
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:tool) do
+            Tool.new
+          end
+
+          before do
+            tool.palette_attributes ={ :_type => "BigPalette" }
+          end
+
+          it "instantiates an object of the given type" do
+            tool.palette.class.should == BigPalette
+          end
         end
       end
 
       context "when the relation is an embeds many" do
+
+        context "when the parent document is persisted" do
+
+          let(:person) do
+            Person.create(:ssn => "465-23-0789")
+          end
+
+          before do
+            Person.send(:undef_method, :addresses_attributes=)
+            Person.accepts_nested_attributes_for :addresses
+          end
+
+          after do
+            Person.send(:undef_method, :addresses_attributes=)
+            Person.accepts_nested_attributes_for :addresses
+          end
+
+          context "when setting the child attributes" do
+
+            let(:attributes) do
+              { "foo" => { "street" => "Maybachufer" } }
+            end
+
+            before do
+              person.addresses_attributes = attributes
+            end
+
+            it "sets the child documents" do
+              person.addresses.first.street.should eq("Maybachufer")
+            end
+
+            it "does not persist the child documents" do
+              person.addresses.first.should_not be_persisted
+            end
+
+            context "when saving the parent" do
+
+              before do
+                person.save
+                person.reload
+              end
+
+              it "saves the child documents" do
+                person.addresses.first.should be_persisted
+              end
+            end
+          end
+        end
 
         let(:person) do
           Person.new
@@ -785,6 +950,25 @@ describe Mongoid::NestedAttributes do
               person.addresses.size.should == 2
             end
           end
+
+          context "when an array of attributes are passed" do
+
+            let(:attributes) do
+              [
+                { "street" => "Maybachufer" },
+                { "street" => "Alexander Platz" }
+              ]
+            end
+
+            before do
+              person.addresses_attributes = attributes
+            end
+
+            it "sets the documents on the relation" do
+              person.addresses.size.should == 2
+            end
+
+          end
         end
 
         context "when ids are passed" do
@@ -815,6 +999,124 @@ describe Mongoid::NestedAttributes do
 
               it "does not add new documents" do
                 person.addresses.size.should == 2
+              end
+            end
+
+            context "when the ids match in an array of attributes" do
+
+              context "when passing in id" do
+
+                before do
+                  person.addresses_attributes =
+                    [
+                      { "id" => address_one.id, "street" => "Maybachufer" },
+                      { "id" => address_two.id, "street" => "Alexander Platz" }
+                    ]
+                end
+
+                it "updates the first existing document" do
+                  person.addresses.collect { |a| a['street'] }.should include('Maybachufer')
+                end
+
+                it "updates the second existing document" do
+                  person.addresses.collect { |a| a['street'] }.should include('Alexander Platz')
+                end
+
+                it "does not add new documents" do
+                  person.addresses.size.should == 2
+                end
+              end
+
+              context "when passing in _id" do
+
+                before do
+                  person.addresses_attributes =
+                    [
+                      { "_id" => address_one.id, "street" => "Maybachufer" },
+                      { "_id" => address_two.id, "street" => "Alexander Platz" }
+                    ]
+                end
+
+                it "updates the first existing document" do
+                  person.addresses.collect { |a| a['street'] }.should include('Maybachufer')
+                end
+
+                it "updates the second existing document" do
+                  person.addresses.collect { |a| a['street'] }.should include('Alexander Platz')
+                end
+
+                it "does not add new documents" do
+                  person.addresses.size.should == 2
+                end
+              end
+            end
+
+            context "when the ids match in an array of attributes and start with '_'" do
+
+              before do
+                person.addresses_attributes =
+                  [
+                    { "_id" => address_one.id, "street" => "Maybachufer" },
+                    { "_id" => address_two.id, "street" => "Alexander Platz" }
+                  ]
+              end
+
+              it "updates the first existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Maybachufer')
+              end
+
+              it "updates the second existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Alexander Platz')
+              end
+
+              it "does not add new documents" do
+                person.addresses.size.should == 2
+              end
+            end
+
+            context "when the ids are _id symbols" do
+
+              before do
+                person.addresses_attributes =
+                  [
+                    { :_id => address_one.id, "street" => "Maybachufer" },
+                    { :_id => address_two.id, "street" => "Alexander Platz" }
+                  ]
+              end
+
+              it "updates the first existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Maybachufer')
+              end
+
+              it "updates the second existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Alexander Platz')
+              end
+
+              it "does not add new documents" do
+                person.addresses.size.should eq(2)
+              end
+            end
+
+            context "when the ids are id symbols" do
+
+              before do
+                person.addresses_attributes =
+                  [
+                    { :id => address_one.id, "street" => "Maybachufer" },
+                    { :id => address_two.id, "street" => "Alexander Platz" }
+                  ]
+              end
+
+              it "updates the first existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Maybachufer')
+              end
+
+              it "updates the second existing document" do
+                person.addresses.collect { |a| a['street'] }.should include('Alexander Platz')
+              end
+
+              it "does not add new documents" do
+                person.addresses.size.should eq(2)
               end
             end
 
@@ -849,20 +1151,137 @@ describe Mongoid::NestedAttributes do
 
                   context "when passed a #{truth} with destroy" do
 
-                    before do
-                      person.addresses_attributes =
-                        {
-                          "bar" => { "id" => address_one.id, "_destroy" => truth },
-                          "foo" => { "id" => address_two.id, "street" => "Alexander Platz" }
-                        }
+                    context "when the parent is new" do
+
+                      before do
+                        person.addresses_attributes =
+                          {
+                            "bar" => { "id" => address_one.id.to_s, "_destroy" => truth },
+                            "foo" => { "id" => address_two.id, "street" => "Alexander Platz" }
+                          }
+                      end
+
+                      it "deletes the marked document" do
+                        person.addresses.size.should == 1
+                      end
+
+                      it "does not delete the unmarked document" do
+                        person.addresses.first.street.should == "Alexander Platz"
+                      end
                     end
 
-                    it "deletes the marked document" do
-                      person.addresses.size.should == 1
-                    end
+                    context "when the parent is persisted" do
 
-                    it "does not delete the unmarked document" do
-                      person.addresses.first.street.should == "Alexander Platz"
+                      let!(:persisted) do
+                        Person.create(:ssn => "123-12-1111") do |p|
+                          p.addresses << [ address_one, address_two ]
+                        end
+                      end
+
+                      context "when setting, pulling, and pushing in one op" do
+
+                        before do
+                          persisted.addresses_attributes =
+                            {
+                              "bar" => { "id" => address_one.id, "_destroy" => truth },
+                              "foo" => { "id" => address_two.id, "street" => "Alexander Platz" },
+                              "baz" => { "street" => "Potsdammer Platz" }
+                            }
+                        end
+
+                        it "removes the first document from the relation" do
+                          persisted.addresses.size.should eq(2)
+                        end
+
+                        it "does not delete the unmarked document" do
+                          persisted.addresses.first.street.should eq(
+                            "Alexander Platz"
+                          )
+                        end
+
+                        it "adds the new document to the relation" do
+                          persisted.addresses.last.street.should eq(
+                            "Potsdammer Platz"
+                          )
+                        end
+
+                        it "has the proper persisted count" do
+                          persisted.addresses.count.should eq(1)
+                        end
+
+                        it "does not delete the removed document" do
+                          address_one.should_not be_destroyed
+                        end
+
+                        context "when saving the parent" do
+
+                          before do
+                            persisted.safely.save
+                          end
+
+                          it "deletes the marked document from the relation" do
+                            persisted.reload.addresses.count.should eq(2)
+                          end
+
+                          it "does not delete the unmarked document" do
+                            persisted.reload.addresses.first.street.should eq(
+                              "Alexander Platz"
+                            )
+                          end
+
+                          it "persists the new document to the relation" do
+                            persisted.reload.addresses.last.street.should eq(
+                              "Potsdammer Platz"
+                            )
+                          end
+                        end
+                      end
+
+                      context "when pulling and pushing in one op" do
+
+                        before do
+                          persisted.addresses_attributes =
+                            {
+                              "bar" => { "id" => address_one.id, "_destroy" => truth },
+                              "baz" => { "street" => "Potsdammer Platz" }
+                            }
+                        end
+
+                        it "removes the first document from the relation" do
+                          persisted.addresses.size.should eq(2)
+                        end
+
+                        it "adds the new document to the relation" do
+                          persisted.addresses.last.street.should eq(
+                            "Potsdammer Platz"
+                          )
+                        end
+
+                        it "has the proper persisted count" do
+                          persisted.addresses.count.should eq(1)
+                        end
+
+                        it "does not delete the removed document" do
+                          address_one.should_not be_destroyed
+                        end
+
+                        context "when saving the parent" do
+
+                          before do
+                            persisted.safely.save
+                          end
+
+                          it "deletes the marked document from the relation" do
+                            persisted.reload.addresses.count.should eq(2)
+                          end
+
+                          it "persists the new document to the relation" do
+                            persisted.reload.addresses.last.street.should eq(
+                              "Potsdammer Platz"
+                            )
+                          end
+                        end
+                      end
                     end
                   end
                 end
@@ -1174,8 +1593,8 @@ describe Mongoid::NestedAttributes do
                   before do
                     person.addresses_attributes =
                       {
-                        "bar" => { "street" => "Maybachufer", "_destroy" => falsehood },
-                        "foo" => { "street" => "Alexander Platz" }
+                        "0" => { "street" => "Maybachufer", "_destroy" => falsehood },
+                        "1" => { "street" => "Alexander Platz" }
                       }
                   end
 
@@ -1213,8 +1632,8 @@ describe Mongoid::NestedAttributes do
                   before do
                     person.addresses_attributes =
                       {
-                        "bar" => { "street" => "Maybachufer", "_destroy" => truth },
-                        "foo" => { "street" => "Alexander Platz" }
+                        "0" => { "street" => "Maybachufer", "_destroy" => truth },
+                        "1" => { "street" => "Alexander Platz" }
                       }
                   end
 
@@ -1239,8 +1658,8 @@ describe Mongoid::NestedAttributes do
                   before do
                     person.addresses_attributes =
                       {
-                        "bar" => { "street" => "Maybachufer", "_destroy" => falsehood },
-                        "foo" => { "street" => "Alexander Platz" }
+                        "0" => { "street" => "Maybachufer", "_destroy" => falsehood },
+                        "1" => { "street" => "Alexander Platz" }
                       }
                   end
 
@@ -1273,8 +1692,8 @@ describe Mongoid::NestedAttributes do
                   before do
                     person.addresses_attributes =
                       {
-                        "bar" => { "street" => "Maybachufer", "_destroy" => truth },
-                        "foo" => { "street" => "Alexander Platz" }
+                        "0" => { "street" => "Maybachufer", "_destroy" => truth },
+                        "1" => { "street" => "Alexander Platz" }
                       }
                   end
 
@@ -1299,8 +1718,8 @@ describe Mongoid::NestedAttributes do
                   before do
                     person.addresses_attributes =
                       {
-                        "bar" => { "street" => "Maybachufer", "_destroy" => falsehood },
-                        "foo" => { "street" => "Alexander Platz" }
+                        "0" => { "street" => "Maybachufer", "_destroy" => falsehood },
+                        "1" => { "street" => "Alexander Platz" }
                       }
                   end
 
@@ -1318,6 +1737,41 @@ describe Mongoid::NestedAttributes do
                 end
               end
             end
+          end
+        end
+
+        context "when the nested document is invalid" do
+
+          before do
+            person.addresses_attributes = {
+              "0" => { :street => '123' }
+            }
+          end
+
+          it "propagates invalidity to parent" do
+            person.addresses.first.should_not be_valid
+            person.should_not be_valid
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:canvas) do
+            Canvas.new
+          end
+
+          before do
+            Canvas.send(:undef_method, :shapes_attributes=)
+            Canvas.accepts_nested_attributes_for :shapes
+            canvas.shapes_attributes =
+              {
+                "foo" => { "_type" => "Square" },
+                "bar" => { "_type" => "Circle" }
+              }
+          end
+
+          it "instantiates an object of the given type" do
+            canvas.shapes.map(&:class).should == [Square, Circle]
           end
         end
       end
@@ -1480,6 +1934,22 @@ describe Mongoid::NestedAttributes do
 
               it "replaces the document" do
                 person.game.name.should == "Pong"
+              end
+            end
+
+            context "when updating attributes" do
+
+              let!(:pizza) do
+                Pizza.create(:name => "large")
+              end
+
+              before do
+                pizza.topping = Topping.create(:name => "cheese")
+                pizza.update_attributes(:topping_attributes => { :name => "onions" })
+              end
+
+              it "persists the attribute changes" do
+                pizza.reload.topping.name.should eq("onions")
               end
             end
 
@@ -1690,6 +2160,35 @@ describe Mongoid::NestedAttributes do
                 end
               end
             end
+          end
+        end
+
+        context "when the nested document is invalid" do
+
+          before do
+            person.game_attributes = { :name => '$$$' }
+          end
+
+          it "propagates invalidity to parent" do
+            person.game.should_not be_valid
+            person.should_not be_valid
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:driver) do
+            Driver.new
+          end
+
+          before do
+            Driver.send(:undef_method, :vehicle_attributes=)
+            Driver.accepts_nested_attributes_for :vehicle
+            driver.vehicle_attributes = { "_type" => "Truck" }
+          end
+
+          it "instantiates an object of the given type" do
+            driver.vehicle.class.should == Truck
           end
         end
       end
@@ -1904,6 +2403,34 @@ describe Mongoid::NestedAttributes do
               end
             end
           end
+
+          context "when the nested document is invalid" do
+            before do
+              game.person_attributes = { :ssn => '$$$' }
+            end
+
+            it "propagates invalidity to parent" do
+              game.person.should_not be_valid
+              game.should_not be_valid
+            end
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:vehicle) do
+            Vehicle.new
+          end
+
+          before do
+            Vehicle.send(:undef_method, :driver_attributes=)
+            Vehicle.accepts_nested_attributes_for :driver
+            vehicle.driver_attributes = { "_type" => "Learner" }
+          end
+
+          it "instantiates an object of the given type" do
+            vehicle.driver.class.should == Learner
+          end
         end
       end
 
@@ -2024,12 +2551,12 @@ describe Mongoid::NestedAttributes do
 
               context "when allow_destroy is true" do
 
-                before(:all) do
+                before do
                   Person.send(:undef_method, :posts_attributes=)
                   Person.accepts_nested_attributes_for :posts, :allow_destroy => true
                 end
 
-                after(:all) do
+                after do
                   Person.send(:undef_method, :posts_attributes=)
                   Person.accepts_nested_attributes_for :posts
                 end
@@ -2087,12 +2614,12 @@ describe Mongoid::NestedAttributes do
 
               context "when allow_destroy is false" do
 
-                before(:all) do
+                before do
                   Person.send(:undef_method, :posts_attributes=)
                   Person.accepts_nested_attributes_for :posts, :allow_destroy => false
                 end
 
-                after(:all) do
+                after do
                   Person.send(:undef_method, :posts_attributes=)
                   Person.accepts_nested_attributes_for :posts
                 end
@@ -2160,6 +2687,11 @@ describe Mongoid::NestedAttributes do
                   Person.accepts_nested_attributes_for :posts
                 end
 
+                after(:all) do
+                  Person.send(:undef_method, :posts_attributes=)
+                  Person.accepts_nested_attributes_for :posts
+                end
+
                 [ 1, "1", true, "true" ].each do |truth|
 
                   context "when passed a #{truth} with destroy" do
@@ -2168,7 +2700,10 @@ describe Mongoid::NestedAttributes do
                       person.posts_attributes =
                         {
                           "0" => {
-                            "id" => post_one.id, "title" => "Another Title", "_destroy" => truth },
+                            "id" => post_one.id,
+                            "title" => "Another Title",
+                            "_destroy" => truth
+                          },
                           "1" => { "id" => post_two.id, "title" => "New Title" }
                         }
                     end
@@ -2176,11 +2711,11 @@ describe Mongoid::NestedAttributes do
                     context "when reloading" do
 
                       it "does not ignore the marked document" do
-                        person.posts(true).first.title.should == "Another Title"
+                        person.posts(true).find(post_one.id).title.should == "Another Title"
                       end
 
                       it "does not delete the unmarked document" do
-                        person.posts(true).last.title.should == "New Title"
+                        person.posts(true).find(post_two.id).title.should == "New Title"
                       end
 
                       it "does not add additional documents" do
@@ -2525,6 +3060,41 @@ describe Mongoid::NestedAttributes do
                 end
               end
             end
+          end
+        end
+
+        context "when the nested document is invalid" do
+
+          before do
+            person.posts_attributes = {
+              "0" => { :title => "$$$" }
+            }
+          end
+
+          it "propagates invalidity to parent" do
+            person.should_not be_valid
+            person.posts.first.should_not be_valid
+          end
+        end
+
+        context "when a type is passed" do
+
+          let(:shipping_container) do
+            ShippingContainer.new
+          end
+
+          before do
+            ShippingContainer.send(:undef_method, :vehicles_attributes=)
+            ShippingContainer.accepts_nested_attributes_for :vehicles
+            shipping_container.vehicles_attributes =
+              {
+                "foo" => { "_type" => "Car" },
+                "bar" => { "_type" => "Truck" }
+              }
+          end
+
+          it "instantiates an object of the given type" do
+            shipping_container.vehicles.map(&:class).should == [Car, Truck]
           end
         end
       end
@@ -3148,6 +3718,191 @@ describe Mongoid::NestedAttributes do
               end
             end
           end
+        end
+
+        context "when the nested document is invalid" do
+          before do
+            person.preferences_attributes = {
+              "0" => { :name => 'x' }
+            }
+          end
+
+          it "propagates invalidity to parent" do
+            person.preferences.first.should_not be_valid
+            person.should_not be_valid
+          end
+        end
+      end
+    end
+  end
+
+  describe "#update_attributes" do
+
+    before(:all) do
+      Person.send(:undef_method, :addresses_attributes=)
+      Person.accepts_nested_attributes_for :addresses
+    end
+
+    context "when deleting the child document" do
+
+      let(:person) do
+        Person.create(:ssn => "678-23-2223")
+      end
+
+      let!(:service) do
+        person.services.create(:sid => "123")
+      end
+
+      let(:attributes) do
+        { :services_attributes =>
+          { "0" =>
+            { :_id => service.id, :sid => service.sid, :_destroy => 1 }
+          }
+        }
+      end
+
+      before do
+        person.update_attributes(attributes)
+      end
+
+      it "removes the document from the parent" do
+        person.services.should be_empty
+      end
+
+      it "deletes the document" do
+        service.should be_destroyed
+      end
+
+      it "runs the before destroy callbacks" do
+        service.before_destroy_called.should be_true
+      end
+
+      it "runs the after destroy callbacks" do
+        service.after_destroy_called.should be_true
+      end
+
+      it "clears the delayed atomic pulls from the parent" do
+        person.delayed_atomic_pulls.should be_empty
+      end
+    end
+
+    context "when nesting multiple levels" do
+
+      let(:person) do
+        Person.create(:ssn => "678-23-2222")
+      end
+
+      context "when second level is a one to many" do
+
+        let(:attributes) do
+          { :addresses_attributes =>
+            { "0" =>
+              {
+                :street => "Alexanderstr",
+                :locations_attributes => { "0" => { :name => "Home" } }
+              }
+            }
+          }
+        end
+
+        before do
+          person.safely.update_attributes(attributes)
+        end
+
+        let(:address) do
+          person.addresses.first
+        end
+
+        let(:location) do
+          address.locations.first
+        end
+
+        it "adds the new first level embedded document" do
+          address.street.should eq("Alexanderstr")
+        end
+
+        it "adds the nested embedded document" do
+          location.name.should eq("Home")
+        end
+      end
+
+      context "when the second level is a one to one" do
+
+        let(:attributes) do
+          { :addresses_attributes =>
+            { "0" =>
+              {
+                :street => "Alexanderstr",
+                :code_attributes => { :name => "Home" }
+              }
+            }
+          }
+        end
+
+        before do
+          person.safely.update_attributes(attributes)
+        end
+
+        let(:address) do
+          person.addresses.first
+        end
+
+        let(:code) do
+          address.code
+        end
+
+        it "adds the new first level embedded document" do
+          address.street.should eq("Alexanderstr")
+        end
+
+        it "adds the nested embedded document" do
+          code.name.should eq("Home")
+        end
+      end
+    end
+
+    context "when the relation is an embeds many" do
+
+      let(:league) do
+        League.create
+      end
+
+      let!(:division) do
+        league.divisions.create(:name => "Old Name")
+      end
+
+      let(:params) do
+        { :divisions_attributes =>
+          { "0" => { :id => division.id.to_s, :name => "New Name" }}
+        }
+      end
+
+      before do
+        league.update_attributes(params)
+      end
+
+      it "sets the nested attributes" do
+        league.reload.divisions.first.name.should == "New Name"
+      end
+
+      context "with corrupted data" do
+
+        before do
+          league[:league] = params
+        end
+
+        let(:new_params) do
+          { :divisions_attributes =>
+            { "0" => { :id => division.id.to_s, :name => "Name" }}
+          }
+        end
+
+        before do
+          league.update_attributes(new_params)
+        end
+
+        it "sets the nested attributes" do
+          league.reload.divisions.first.name.should == "Name"
         end
       end
     end

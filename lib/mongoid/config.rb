@@ -1,7 +1,9 @@
 # encoding: utf-8
 require "uri"
 require "mongoid/config/database"
+require "mongoid/config/environment"
 require "mongoid/config/replset_database"
+require "mongoid/config/options"
 
 module Mongoid #:nodoc
 
@@ -11,39 +13,25 @@ module Mongoid #:nodoc
   # @todo Durran: This module needs an overhaul, remove singleton, etc.
   module Config
     extend self
+    extend Options
+    include ActiveModel::Observing
 
-    attr_accessor :master, :slaves, :settings
-    @settings = {}
-
-    # Define a configuration option with a default.
-    #
-    # @example Define the option.
-    #   Config.option(:persist_in_safe_mode, :default => false)
-    #
-    # @param [ Symbol ] name The name of the configuration option.
-    # @param [ Hash ] options Extras for the option.
-    #
-    # @option options [ Object ] :default The default value.
-    #
-    # @since 2.0.0.rc.1
-    def option(name, options = {})
-      define_method(name) do
-        settings.has_key?(name) ? settings[name] : options[:default]
-      end
-      define_method("#{name}=") { |value| settings[name] = value }
-      define_method("#{name}?") { send(name) }
-    end
+    # @attribute [rw] master The master database.
+    attr_accessor :master
 
     option :allow_dynamic_fields, :default => true
-    option :include_root_in_json, :default => false
-    option :parameterize_keys, :default => true
-    option :persist_in_safe_mode, :default => false
-    option :raise_not_found_error, :default => true
-    option :reconnect_time, :default => 3
     option :autocreate_indexes, :default => false
+    option :identity_map_enabled, :default => false
+    option :include_root_in_json, :default => false
+    option :max_retries_on_connection_failure, :default => 0
+    option :parameterize_keys, :default => true
+    option :scope_overwrite_exception, :default => false
+    option :persist_in_safe_mode, :default => false
+    option :preload_models, :default => false
+    option :raise_not_found_error, :default => true
     option :skip_version_check, :default => false
     option :time_zone, :default => nil
-    option :binding_defaults, :default => { :binding => false, :continue => true }
+    option :use_utc, :default => false
 
     # Adds a new I18n locale file to the load path.
     #
@@ -88,12 +76,7 @@ module Mongoid #:nodoc
     #
     # @return [ Array<String> ] An array of bad field names.
     def destructive_fields
-      @destructive_fields ||= lambda {
-        klass = Class.new do
-          include Mongoid::Document
-        end
-        klass.instance_methods(true).collect { |method| method.to_s }
-      }.call
+      Components.prohibited_methods
     end
 
     # Configure mongoid from a hash. This is usually called after parsing a
@@ -107,8 +90,33 @@ module Mongoid #:nodoc
       options.except("database", "slaves", "databases").each_pair do |name, value|
         send("#{name}=", value) if respond_to?("#{name}=")
       end
-      configure_databases(options)
+      @master, @slaves = configure_databases(options)
       configure_extras(options["databases"])
+    end
+
+    # Load the settings from a compliant mongoid.yml file. This can be used for
+    # easy setup with frameworks other than Rails.
+    #
+    # @example Configure Mongoid.
+    #   Mongoid.load!("/path/to/mongoid.yml")
+    #
+    # @param [ String ] path The path to the file.
+    #
+    # @since 2.0.1
+    def load!(path)
+      Environment.load_yaml(path).tap do |settings|
+        from_hash(settings) if settings.present?
+      end
+    end
+
+    # Returns the default logger, which is either a Rails logger of stdout logger
+    #
+    # @example Get the default logger
+    #   config.default_logger
+    #
+    # @return [ Logger ] The default Logger instance.
+    def default_logger
+      defined?(Rails) && Rails.respond_to?(:logger) ? Rails.logger : ::Logger.new($stdout)
     end
 
     # Returns the logger, or defaults to Rails logger or stdout logger.
@@ -116,9 +124,10 @@ module Mongoid #:nodoc
     # @example Get the logger.
     #   config.logger
     #
-    # @return [ Logger ] The desired logger.
+    # @return [ Logger ] The configured logger or a default Logger instance.
     def logger
-      @logger ||= defined?(Rails) ? Rails.logger : ::Logger.new($stdout)
+      @logger = default_logger unless defined?(@logger)
+      @logger
     end
 
     # Sets the logger for Mongoid to use.
@@ -128,35 +137,40 @@ module Mongoid #:nodoc
     #
     # @return [ Logger ] The newly set logger.
     def logger=(logger)
-      @logger = logger
+      case logger
+      when false, nil then @logger = nil
+      when true then @logger = default_logger
+      else
+        @logger = logger if logger.respond_to?(:info)
+      end
+    end
+
+    # Purge all data in all collections, including indexes.
+    #
+    # @example Purge all data.
+    #   Mongoid::Config.purge!
+    #
+    # @since 2.0.2
+    def purge!
+      master.collections.map do |collection|
+        collection.drop if collection.name !~ /system/
+      end
     end
 
     # Sets whether the times returned from the database use the ruby or
     # the ActiveSupport time zone.
-    # If you omit this setting, then times will use the ruby time zone.
     #
-    # Example:
+    # @note If you omit this setting, then times will use the ruby time zone.
     #
-    # <tt>Config.use_activesupport_time_zone = true</tt>
+    # @example Set the time zone config.
+    #   Config.use_activesupport_time_zone = true
     #
-    # Returns:
+    # @param [ true, false ] value Whether to use Active Support time zones.
     #
-    # A boolean
+    # @return [ true, false ] The supplied value or false if nil.
     def use_activesupport_time_zone=(value)
       @use_activesupport_time_zone = value || false
     end
-
-    # Sets whether the times returned from the database use the ruby or
-    # the ActiveSupport time zone.
-    # If the setting is false, then times will use the ruby time zone.
-    #
-    # Example:
-    #
-    # <tt>Config.use_activesupport_time_zone</tt>
-    #
-    # Returns:
-    #
-    # A boolean
     attr_reader :use_activesupport_time_zone
     alias_method :use_activesupport_time_zone?, :use_activesupport_time_zone
 
@@ -164,7 +178,7 @@ module Mongoid #:nodoc
     # set is not a valid +Mongo::DB+, then an error will be raised.
     #
     # @example Set the master database.
-    #   config.master = Mongo::Connection.db("test")
+    #   config.master = Mongo::Connection.new.db("test")
     #
     # @param [ Mongo::DB ] db The master database.
     #
@@ -188,7 +202,7 @@ module Mongoid #:nodoc
     # @return [ Mongo::DB ] The master database.
     def master
       unless @master
-        configure_databases(@settings) unless @settings.blank?
+        @master, @slaves = configure_databases(@settings) unless @settings.blank?
         raise Errors::InvalidDatabase.new(nil) unless @master
       end
       if @reconnect
@@ -215,70 +229,6 @@ module Mongoid #:nodoc
         @reconnect = true
       end
     end
-
-    # Reset the configuration options to the defaults.
-    #
-    # @example Reset the configuration options.
-    #   config.reset
-    def reset
-      settings.clear
-    end
-
-    # Sets the Mongo::DB slave databases to be used. If the objects provided
-    # are not valid +Mongo::DBs+ an error will be raised.
-    #
-    # @example Set the slaves.
-    #   config.slaves = [ Mongo::Connection.db("test") ]
-    #
-    # @param [ Array<Mongo::DB> ] dbs The slave databases.
-    #
-    # @raise [ Errors::InvalidDatabase ] If the slaves arent valid objects.
-    #
-    # @return [ Array<Mongo::DB> ] The slave DB instances.
-    def slaves=(dbs)
-      return unless dbs
-      dbs.each do |db|
-        check_database!(db)
-      end
-      @slaves = dbs
-    end
-
-    # Returns the slave databases or nil if none have been set.
-    #
-    # @example Get the slaves.
-    #   config.slaves
-    #
-    # @return [ Array<Mongo::DB>, nil ] The slave databases.
-    def slaves
-      unless @slaves
-        configure_databases(@settings) if @settings && @settings[:database]
-      end
-      @slaves
-    end
-
-    # Sets whether the times returned from the database are in UTC or local time.
-    # If you omit this setting, then times will be returned in
-    # the local time zone.
-    #
-    # @example Set the use of UTC.
-    #   config.use_utc = true
-    #
-    # @param [ true, false ] value Whether to use UTC or not.
-    #
-    # @return [ true, false ] Are we using UTC?
-    def use_utc=(value)
-      @use_utc = value || false
-    end
-
-    # Returns whether times are return from the database in UTC. If
-    # this setting is false, then times will be returned in the local time zone.
-    #
-    # @example Are we using UTC?
-    #   config.use_utc
-    #
-    # @return [ true, false ] True if UTC, false if not.
-    attr_reader :use_utc
-    alias :use_utc? :use_utc
 
     protected
 
@@ -317,9 +267,9 @@ module Mongoid #:nodoc
     # @since 2.0.0.rc.1
     def configure_databases(options)
       if options.has_key?('hosts')
-        @master, @slaves = ReplsetDatabase.new(options).configure
+        ReplsetDatabase.new(options).configure
       else
-        @master, @slaves = Database.new(options).configure
+        Database.new(options).configure
       end
     end
 
@@ -334,7 +284,7 @@ module Mongoid #:nodoc
     def configure_extras(extras)
       @databases = (extras || []).inject({}) do |dbs, (name, options)|
         dbs.tap do |extra|
-        dbs[name], dbs["#{name}_slaves"] = Database.new(options).configure
+        dbs[name], dbs["#{name}_slaves"] = configure_databases(options)
         end
       end
     end

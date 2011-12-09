@@ -40,6 +40,28 @@ describe Mongoid::Extensions::ObjectId::Conversions do
         end
       end
 
+      context "when provided an array of nils" do
+
+        let(:converted) do
+          BSON::ObjectId.convert(Person, [ nil, nil ])
+        end
+
+        it "returns an empty array" do
+          converted.should be_empty
+        end
+      end
+
+      context "when provided an array of empty strings" do
+
+        let(:converted) do
+          BSON::ObjectId.convert(Person, [ "", "" ])
+        end
+
+        it "returns an empty array" do
+          converted.should be_empty
+        end
+      end
+
       context "when provided a single string" do
 
         context "when the string is a valid object id" do
@@ -55,10 +77,21 @@ describe Mongoid::Extensions::ObjectId::Conversions do
 
         context "when the string is not a valid object id" do
 
-          it "raises an error" do
-            expect {
-              BSON::ObjectId.convert(Person, composite_key)
-            }.to raise_error(BSON::InvalidObjectId)
+          it "returns the key" do
+            BSON::ObjectId.convert(Person, composite_key).should eq(
+              composite_key
+            )
+          end
+        end
+
+        context "when the string is empty" do
+
+          let(:converted) do
+            BSON::ObjectId.convert(Person, "")
+          end
+
+          it "converts to nil" do
+            converted.should be_nil
           end
         end
       end
@@ -90,10 +123,10 @@ describe Mongoid::Extensions::ObjectId::Conversions do
             BSON::ObjectId.convert(Person, [ composite_key, other_key ])
           end
 
-          it "converts to an array of object ids" do
-            expect {
-              BSON::ObjectId.convert(Person, composite_key)
-            }.to raise_error(BSON::InvalidObjectId)
+          it "returns the key" do
+            BSON::ObjectId.convert(Person, composite_key).should eq(
+              composite_key
+            )
           end
         end
       end
@@ -310,42 +343,6 @@ describe Mongoid::Extensions::ObjectId::Conversions do
         it "returns the hash" do
           converted.should == { :key => 100 }
         end
-      end
-    end
-  end
-
-  describe ".get" do
-
-    it "returns self" do
-      BSON::ObjectId.get(object_id).should == object_id
-    end
-  end
-
-  describe ".set" do
-
-    let(:object_id_string) do
-      "4c52c439931a90ab29000003"
-    end
-
-    context "with a blank string" do
-
-      it "returns nil" do
-        BSON::ObjectId.set("").should be_nil
-      end
-    end
-
-    context "with a populated string" do
-
-      it "returns an object id" do
-        BSON::ObjectId.set(object_id_string).should ==
-          BSON::ObjectId.from_string(object_id_string)
-      end
-    end
-
-    context "with an object id" do
-
-      it "returns self" do
-        BSON::ObjectId.set(object_id).should == object_id
       end
     end
   end

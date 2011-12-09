@@ -2,18 +2,27 @@ require "spec_helper"
 
 describe Mongoid::Relations::Builders::Referenced::In do
 
+  let(:base) do
+    stub
+  end
+
   describe "#build" do
+
+    let(:criteria) do
+      Person.where(:_id => object_id)
+    end
 
     let(:metadata) do
       stub(
         :klass => Person,
         :name => :person,
-        :foreign_key => "person_id"
+        :foreign_key => "person_id",
+        :criteria => criteria
       )
     end
 
     let(:builder) do
-      described_class.new(metadata, object)
+      described_class.new(base, metadata, object)
     end
 
     context "when provided an id" do
@@ -33,7 +42,7 @@ describe Mongoid::Relations::Builders::Referenced::In do
         end
 
         before do
-          Person.expects(:find).with(object_id).returns(person)
+          criteria.expects(:first).returns(person)
           @document = builder.build
         end
 
@@ -55,7 +64,7 @@ describe Mongoid::Relations::Builders::Referenced::In do
         end
 
         before do
-          Person.expects(:find).with(object_id).returns(person)
+          criteria.expects(:first).returns(person)
           @document = builder.build
         end
 

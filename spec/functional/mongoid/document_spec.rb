@@ -6,6 +6,18 @@ describe Mongoid::Document do
     Person.delete_all
   end
 
+  describe "#initialize" do
+
+    context "when providing a block" do
+
+      it "sets the defaults before yielding" do
+        Person.new do |person|
+          person.age.should eq(100)
+        end
+      end
+    end
+  end
+
   context "defining a BSON::ObjectId as a field" do
 
     let(:bson_id) do
@@ -29,6 +41,21 @@ describe Mongoid::Document do
     end
   end
 
+  context "when setting bson id fields to empty strings" do
+
+    let(:post) do
+      Post.new
+    end
+
+    before do
+      post.person_id = ""
+    end
+
+    it "converts them to nil" do
+      post.person_id.should be_nil
+    end
+  end
+
   context "creating anonymous documents" do
 
     context "when defining collection" do
@@ -43,6 +70,80 @@ describe Mongoid::Document do
 
       it "allows the creation" do
         Object.const_set "Anonymous", @model
+      end
+    end
+  end
+
+  context "becoming another class" do
+
+    before(:all) do
+      class Manager < Person
+        field :level, :type => Integer, :default => 1
+      end
+    end
+
+    %w{upcasting downcasting}.each do |ctx|
+      context ctx do
+        before(:all) do
+          if ctx == 'upcasting'
+            @klass = Manager
+            @to_become = Person
+          else
+            @klass = Person
+            @to_become = Manager
+          end
+        end
+
+        before(:each) do
+          @obj = @klass.new(:title => 'Sir')
+        end
+
+        it "copies attributes" do
+          became = @obj.becomes(@to_become)
+          became.title.should == 'Sir'
+        end
+
+        it "copies state" do
+          @obj.should be_new_record
+          became = @obj.becomes(@to_become)
+          became.should be_new_record
+
+          @obj.save
+          @obj.should_not be_new_record
+          became = @obj.becomes(@to_become)
+          became.should_not be_new_record
+
+          @obj.destroy
+          @obj.should be_destroyed
+          became = @obj.becomes(@to_become)
+          became.should be_destroyed
+        end
+
+        it "copies errors" do
+          @obj.ssn = '$$$'
+          @obj.should_not be_valid
+          @obj.errors.should include(:ssn)
+          became = @obj.becomes(@to_become)
+          became.should_not be_valid
+          became.errors.should include(:ssn)
+        end
+
+        it "sets the class type" do
+          became = @obj.becomes(@to_become)
+          became._type.should == @to_become.to_s
+        end
+
+        it "raises an error when inappropriate class is provided" do
+          lambda {@obj.becomes(String)}.should raise_error(ArgumentError)
+        end
+      end
+    end
+
+    context "upcasting to class with default attributes" do
+
+      it "applies default attributes" do
+        @obj = Person.new(:title => 'Sir').becomes(Manager)
+        @obj.level.should == 1
       end
     end
   end
@@ -112,7 +213,7 @@ describe Mongoid::Document do
       else
         person.id.should be_a_kind_of(String)
       end
-      person.attributes[:title].should == "Test"
+      person[:title].should == "Test"
     end
 
     context "when creating a has many" do
@@ -183,54 +284,8 @@ describe Mongoid::Document do
         @person.addresses.first.destroy
         @person.name.should_not be_nil
         @person.name.destroy
-        @person.addresses.first.should be_nil
+        @person.addresses.should be_empty
         @person.name.should be_nil
-      end
-    end
-  end
-
-  context ".find_or_create_by" do
-
-    before do
-      @person = Person.create(:title => "Senior")
-    end
-
-    context "when the document is found" do
-
-      it "returns the document" do
-        Person.find_or_create_by(:title => "Senior").should == @person
-      end
-    end
-
-    context "when the document is not found" do
-
-      it "creates a new document" do
-        person = Person.find_or_create_by(:title => "Senorita", :ssn => "1234567")
-        person.title.should == "Senorita"
-        person.should_not be_a_new_record
-      end
-    end
-  end
-
-  context ".find_or_initialize_by" do
-
-    before do
-      @person = Person.create(:title => "Senior")
-    end
-
-    context "when the document is found" do
-
-      it "returns the document" do
-        Person.find_or_initialize_by(:title => "Senior").should == @person
-      end
-    end
-
-    context "when the document is not found" do
-
-      it "returns a new document" do
-        person = Person.find_or_initialize_by(:title => "Senorita")
-        person.title.should == "Senorita"
-        person.should be_a_new_record
       end
     end
   end
@@ -307,153 +362,6 @@ describe Mongoid::Document do
     it "is a single object and not an array" do
       @from_db = PetOwner.find(@owner.id)
       @from_db.address.should == @address
-    end
-  end
-
-  describe "#paginate" do
-
-    before do
-      10.times do |num|
-        Person.create(:title => "Test-#{num}", :ssn => "55#{num}")
-      end
-    end
-
-    it "returns paginated documents" do
-      Person.paginate(:per_page => 5, :page => 2).length.should == 5
-    end
-
-    it "returns a proper count" do
-      @criteria = Mongoid::Criteria.translate(Person, false, { :per_page => 5, :page => 1 })
-      @criteria.count.should == 10
-    end
-
-    context "when paginating $or queries" do
-
-      before do
-        @results = Person.any_of(:title => /^Test/).paginate(:page => 2, :per_page => 5)
-      end
-
-      it "returns the proper page" do
-        @results.current_page.should == 2
-      end
-
-      it "returns the proper number per page" do
-        @results.per_page.should == 5
-      end
-
-      it "returns the proper count" do
-        @results.count.should == 5
-      end
-
-      it "returns the proper total entries" do
-        @results.total_entries.should == 10
-      end
-    end
-  end
-
-  describe "#reload" do
-
-    let(:person) do
-      Person.create(:ssn => "112-11-1121", :title => "Sir")
-    end
-
-    let!(:from_db) do
-      Person.find(person.id).tap do |peep|
-        peep.age = 35
-        peep.save
-      end
-    end
-
-    it "reloads the object attributes from the db" do
-      person.reload
-      person.age.should == 35
-    end
-
-    it "reload should return self" do
-      person.reload.should == from_db
-    end
-
-    context "when the document was dirty" do
-
-      let(:person) do
-        Person.create(:ssn => "543-24-2341")
-      end
-
-      before do
-        person.title = "Sir"
-        person.reload
-      end
-
-      it "resets the dirty modifications" do
-        person.changes.should be_empty
-      end
-    end
-
-    context "when document not saved" do
-
-      context "when raising not found error" do
-
-        it "raises an error" do
-          lambda { Person.new.reload }.should raise_error(Mongoid::Errors::DocumentNotFound)
-        end
-      end
-    end
-
-    context "when embedded documents change" do
-
-      let!(:address) do
-        person.addresses.create(:number => 27, :street => "Maiden Lane")
-      end
-
-      before do
-        Person.collection.update(
-          { "_id" => person.id }, { "$set" => { "addresses" => [] } }
-        )
-        person.reload
-      end
-
-      it "should reload the association" do
-        person.addresses.should == []
-      end
-    end
-
-    context "with relational associations" do
-
-      context "for a references_one" do
-
-        let!(:game) do
-          person.create_game(:score => 50)
-        end
-
-        before do
-          Game.collection.update(
-            { "_id" => game.id }, { "$set" => { "score" => 75 } }
-          )
-          person.reload
-        end
-
-        it "should reload the association" do
-          person.game.score.should == 75
-        end
-      end
-
-      context "for a referenced_in" do
-
-        let!(:game) do
-          person.create_game(:score => 50)
-        end
-
-        before do
-          Person.collection.update(
-            { "_id" => person.id }, { "$set" => { "title" => "Mam" } }
-          )
-          game.reload
-        end
-
-        it "should reload the association" do
-          game.person.title.should == "Mam"
-        end
-      end
     end
   end
 
@@ -698,6 +606,68 @@ describe Mongoid::Document do
       it "handles comparisons with date objects"do
         people = Person.where(:dob => { "$lt" => Date.today.midnight })
         people.first.should == @person
+      end
+    end
+  end
+
+  context "method with block" do
+
+    before do
+      @owner = Owner.create(:name => "Krzysiek")
+    end
+
+    after do
+      Event.collection.drop
+      User.collection.drop
+    end
+
+    context "called on a reference_many object" do
+      before do
+        {'My birthday' => Date.new(1981, 2, 1), 'My cat`s birthday' => Date.new(1981, 2, 1),
+         'My pidgeon`s birthday' => Date.new(1981, 2, 2) }.each do |title, date|
+          event = Event.new(:title => title, :date => date)
+          event.owner = @owner
+          event.save!
+        end
+      end
+
+      let(:events) do
+        rounds = []
+        @owner.events.each_day(Date.new(1981, 1, 2), Date.new(1981, 2, 2)) do |date, collection|
+          rounds << {:date => date, :collection => collection}
+        end
+        rounds.sort_by { |round| round[:date] }
+      end
+
+      it "should pass the block" do
+        events.length.should == 2
+        events.first[:collection].length.should == 2
+        events.last[:collection].length.should == 1
+      end
+    end
+
+    context "called on an embeds_many object" do
+      before do
+        {'My birthday' => Date.new(1981, 2, 1), 'My cat`s birthday' => Date.new(1981, 2, 1),
+         'My pidgeon`s birthday' => Date.new(1981, 2, 2) }.each do |title, date|
+          birthday = Birthday.new(:title => title, :date => date)
+          birthday.owner = @owner
+          birthday.save!
+        end
+      end
+
+      let(:birthdays) do
+        rounds = []
+        @owner.birthdays.each_day(Date.new(1981, 1, 2), Date.new(1981, 2, 2)) do |date, collection|
+          rounds << {:date => date, :collection => collection}
+        end
+        rounds.sort_by { |round| round[:date] }
+      end
+
+      it "should pass the block" do
+        birthdays.length.should == 2
+        birthdays.first[:collection].length.should == 2
+        birthdays.last[:collection].length.should == 1
       end
     end
   end

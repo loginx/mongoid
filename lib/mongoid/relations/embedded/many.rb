@@ -6,44 +6,62 @@ module Mongoid # :nodoc:
       # This class handles the behaviour for a document that embeds many other
       # documents within in it as an array.
       class Many < Relations::Many
+        include Atomic
 
-        # Binds the base object to the inverse of the relation. This is so we
-        # are referenced to the actual objects themselves and dont hit the
-        # database twice when setting the relations up.
+        # Appends a document or array of documents to the relation. Will set
+        # the parent and update the index in the process.
         #
-        # This is called after first creating the relation, or if a new object
-        # is set on the relation.
+        # @example Append a document.
+        #   person.addresses << address
         #
-        # @example Bind the relation.
-        #   person.addresses.bind(:continue => true)
+        # @example Push a document.
+        #   person.addresses.push(address)
         #
-        # @param [ Hash ] options The options to bind with.
+        # @example Concat with other documents.
+        #   person.addresses.concat([ address_one, address_two ])
         #
-        # @option options [ true, false ] :binding Are we in build mode?
-        # @option options [ true, false ] :continue Continue binding the
-        #   inverse?
-        #
-        # @since 2.0.0.rc.1
-        def bind(options = {})
-          binding.bind(options)
-          target.each(&:save) if base.persisted? && !options[:binding]
+        # @param [ Document, Array<Document> ] *args Any number of documents.
+        def <<(*args)
+          atomically(:$pushAll) do
+            args.flatten.each do |doc|
+              next unless doc
+              append(doc)
+              doc.save if persistable? && !_assigning?
+            end
+          end
         end
+        alias :concat :<<
+        alias :push :<<
 
-        # Bind the inverse relation between a single document in this proxy
-        # instead of the entire target.
+        # Builds a new document in the relation and appends it to the target.
+        # Takes an optional type if you want to specify a subclass.
         #
-        # Used when appending to the target instead of setting the entire
-        # thing.
+        # @example Build a new document on the relation.
+        #   person.people.build(:name => "Bozo")
         #
-        # @example Bind a single document.
-        #   person.addressses.bind_one(address)
+        # @overload build(attributes = {}, options = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Hash ] options The scoped assignment options.
+        #   @param [ Class ] type Optional class to build the document with.
         #
-        # @param [ Document ] document The document to bind.
+        # @overload build(attributes = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Class ] type Optional class to build the document with.
         #
-        # @since 2.0.0.rc.1
-        def bind_one(document, options = {})
-          binding.bind_one(document, options)
+        # @return [ Document ] The new document.
+        def build(attributes = {}, options = {}, type = nil)
+          if options.is_a? Class
+            options, type = {}, options
+          end
+
+          Factory.build(type || metadata.klass, attributes, options).tap do |doc|
+            doc.identify
+            append(doc)
+            yield(doc) if block_given?
+            doc.run_callbacks(:build) { doc }
+          end
         end
+        alias :new :build
 
         # Clear the relation. Will delete the documents from the db if they are
         # already persisted.
@@ -53,7 +71,9 @@ module Mongoid # :nodoc:
         #
         # @return [ Many ] The empty relation.
         def clear
-          load! and substitute(nil)
+          tap do |proxy|
+            atomically(:$unset) { proxy.delete_all }
+          end
         end
 
         # Returns a count of the number of documents in the association that have
@@ -67,7 +87,7 @@ module Mongoid # :nodoc:
         # @return [ Integer ] The total number of persisted embedded docs, as
         #   flagged by the #persisted? method.
         def count
-          target.select(&:persisted?).size
+          target.select { |doc| doc.persisted? }.size
         end
 
         # Create a new document in the relation. This is essentially the same
@@ -76,12 +96,18 @@ module Mongoid # :nodoc:
         # @example Create a new document in the relation.
         #   person.movies.create(:name => "Bozo")
         #
-        # @param [ Hash ] attributes The attributes to build the document with.
-        # @param [ Class ] type Optional class to create the document with.
+        # @overload create(attributes = {}, options = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Hash ] options The scoped assignment options.
+        #   @param [ Class ] type Optional class to create the document with.
+        #
+        # @overload create(attributes = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Class ] type Optional class to create the document with.
         #
         # @return [ Document ] The newly created document.
-        def create(attributes = {}, type = nil)
-          build(attributes, type).tap(&:save)
+        def create(attributes = {}, options = {}, type = nil, &block)
+          build(attributes, options, type, &block).tap { |doc| doc.save }
         end
 
         # Create a new document in the relation. This is essentially the same
@@ -91,21 +117,27 @@ module Mongoid # :nodoc:
         # @example Create the document.
         #   person.addresses.create!(:street => "Unter der Linden")</tt>
         #
-        # @param [ Hash ] attributes The attributes to build the document with.
-        # @param [ Class ] type Optional class to create the document with.
+        # @overload create!(attributes = {}, options = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Hash ] options The scoped assignment options.
+        #   @param [ Class ] type Optional class to create the document with.
+        #
+        # @overload create!(attributes = {}, type = nil)
+        #   @param [ Hash ] attributes The attributes to build the document with.
+        #   @param [ Class ] type Optional class to create the document with.
         #
         # @raise [ Errors::Validations ] If a validation error occured.
         #
         # @return [ Document ] The newly created document.
-        def create!(attributes = {}, type = nil)
-          build(attributes, type).tap(&:save!)
+        def create!(attributes = {}, options = {}, type = nil, &block)
+          build(attributes, options, type, &block).tap { |doc| doc.save! }
         end
 
         # Delete the supplied document from the target. This method is proxied
         # in order to reindex the array after the operation occurs.
         #
         # @example Delete the document from the relation.
-        #   perosn.addresses.delete(address)
+        #   person.addresses.delete(address)
         #
         # @param [ Document ] document The document to be deleted.
         #
@@ -113,7 +145,17 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def delete(document)
-          target.delete(document).tap { reindex }
+          target.delete_one(document).tap do |doc|
+            if doc && !_binding?
+              if _assigning?
+                base.add_atomic_pull(doc)
+              else
+                doc.delete(:suppress => true)
+              end
+              unbind_one(doc)
+            end
+            reindex
+          end
         end
 
         # Delete all the documents in the association without running callbacks.
@@ -128,7 +170,7 @@ module Mongoid # :nodoc:
         #
         # @return [ Integer ] The number of documents deleted.
         def delete_all(conditions = {})
-          remove_all(conditions, false)
+          atomically(:$pull) { remove_all(conditions, :delete) }
         end
 
         # Destroy all the documents in the association whilst running callbacks.
@@ -143,7 +185,7 @@ module Mongoid # :nodoc:
         #
         # @return [ Integer ] The number of documents destroyed.
         def destroy_all(conditions = {})
-          remove_all(conditions, true)
+          atomically(:$pull) { remove_all(conditions, :destroy) }
         end
 
         # Finds a document in this association through several different
@@ -164,15 +206,7 @@ module Mongoid # :nodoc:
         #
         # @return [ Array<Document>, Document ] A single or multiple documents.
         def find(*args)
-          type, criteria = Criteria.parse!(self, true, *args)
-          case type
-          when :first then return criteria.one
-          when :last then return criteria.last
-          else
-            criteria.tap do |crit|
-              crit.documents = target if crit.is_a?(Criteria)
-            end
-          end
+          criteria.find(*args)
         end
 
         # Instantiate a new embeds_many relation.
@@ -188,47 +222,22 @@ module Mongoid # :nodoc:
         def initialize(base, target, metadata)
           init(base, target, metadata) do
             target.each_with_index do |doc, index|
-              characterize_one(doc)
-              doc.parentize(base)
+              integrate(doc)
               doc._index = index
             end
           end
         end
 
-        # Will load the target into an array if the target had not already been
-        # loaded.
+        # Get all the documents in the relation that are loaded into memory.
         #
-        # @example Load the relation into memory.
-        #   relation.load!
+        # @example Get the in memory documents.
+        #   relation.in_memory
         #
-        # @return [ Many ] The relation.
+        # @return [ Array<Document> ] The documents in memory.
         #
-        # @since 2.0.0.rc.5
-        def load!(options = {})
-          tap do |relation|
-            unless relation.loaded?
-              relation.bind(options)
-              relation.loaded = true
-            end
-          end
-        end
-
-        # Paginate the association. Will create a new criteria, set the documents
-        # on it and execute in an enumerable context.
-        #
-        # @example Paginate the relation.
-        #   person.addresses.paginate(:page => 1, :per_page => 20)
-        #
-        # @param [ Hash ] options The pagination options.
-        #
-        # @option options [ Integer ] :page The page number.
-        # @option options [ Integer ] :per_page The number on each page.
-        #
-        # @return [ WillPaginate::Collection ] The paginated documents.
-        def paginate(options)
-          criteria = Mongoid::Criteria.translate(metadata.klass, true, options)
-          criteria.documents = target
-          criteria.paginate(options)
+        # @since 2.1.0
+        def in_memory
+          target
         end
 
         # Substitutes the supplied target documents for the existing documents
@@ -243,15 +252,28 @@ module Mongoid # :nodoc:
         # @return [ Many ] The proxied relation.
         #
         # @since 2.0.0.rc.1
-        def substitute(new_target, options = {})
-          old_target = target
-          tap do |relation|
-            relation.target = new_target || []
-            if !new_target.blank?
-              unbind(old_target, options)
-              bind(options)
+        def substitute(replacement)
+          tap do |proxy|
+            if replacement.blank?
+              if _assigning? && !proxy.empty?
+                base.atomic_unsets.push(proxy.first.atomic_path)
+              end
+              proxy.clear
             else
-              unbind(old_target, options)
+              atomically(:$set) do
+                if replacement.first.is_a?(Hash)
+                  replacement = Many.builder(base, metadata, replacement).build
+                end
+                proxy.target = replacement.compact
+                if _assigning?
+                  base.delayed_atomic_sets[metadata.name.to_s] = proxy.as_document
+                end
+                proxy.target.each_with_index do |doc, index|
+                  integrate(doc)
+                  doc._index = index
+                  doc.save if base.persisted? && !_assigning?
+                end
+              end
             end
           end
         end
@@ -265,34 +287,24 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def as_document
-          target.inject([]) do |attributes, doc|
-            attributes.tap do |attr|
-              attr << doc.as_document
+          [].tap do |attributes|
+            target.each do |doc|
+              attributes << doc.as_document
             end
           end
         end
 
-        # Unbind the inverse relation from this set of documents. Used when the
-        # entire proxy has been cleared, set to nil or empty, or replaced.
+        # Get a criteria for the embedded documents without the default scoping
+        # applied.
         #
-        # @example Unbind the relation.
-        #   person.addresses.unbind(target, :continue => false)
+        # @example Get the unscoped criteria.
+        #   person.addresses.unscoped
         #
-        # @param [ Array<Document> ] old_target The relations previous target.
-        # @param [ Hash ] options The options to bind with.
+        # @return [ Criteria ] The unscoped criteria.
         #
-        # @option options [ true, false ] :binding Are we in build mode?
-        # @option options [ true, false ] :continue Continue binding the
-        #   inverse?
-        #
-        # @since 2.0.0.rc.1
-        def unbind(old_target, options = {})
-          binding(old_target).unbind(options)
-          if base.persisted?
-            old_target.each do |doc|
-              doc.delete unless doc.destroyed?
-            end
-          end
+        # @since 2.2.1
+        def unscoped
+          criteria(false)
         end
 
         private
@@ -306,10 +318,9 @@ module Mongoid # :nodoc:
         # @param [ Document ] document The document to append to the target.
         #
         # @since 2.0.0.rc.1
-        def append(document, options = {})
-          load! and target.push(document)
-          characterize_one(document)
-          bind_one(document, options)
+        def append(document)
+          target.push(document)
+          integrate(document)
           document._index = target.size - 1
         end
 
@@ -323,8 +334,8 @@ module Mongoid # :nodoc:
         # @return [ Binding ] The many binding.
         #
         # @since 2.0.0.rc.1
-        def binding(new_target = nil)
-          Bindings::Embedded::Many.new(base, new_target || target, metadata)
+        def binding
+          Bindings::Embedded::Many.new(base, target, metadata)
         end
 
         # Returns the criteria object for the target class with its documents set
@@ -334,10 +345,24 @@ module Mongoid # :nodoc:
         #   relation.criteria
         #
         # @return [ Criteria ] A new criteria.
-        def criteria
-          metadata.klass.criteria(true).tap do |criterion|
+        def criteria(scoped = true)
+          klass.criteria(true, scoped).tap do |criterion|
             criterion.documents = target
           end
+        end
+
+        # Integrate the document into the relation. will set its metadata and
+        # attempt to bind the inverse.
+        #
+        # @example Integrate the document.
+        #   relation.integrate(document)
+        #
+        # @param [ Document ] document The document to integrate.
+        #
+        # @since 2.1.0
+        def integrate(document)
+          characterize_one(document)
+          bind_one(document)
         end
 
         # If the target array does not respond to the supplied method then try to
@@ -351,11 +376,22 @@ module Mongoid # :nodoc:
         #
         # @return [ Criteria, Object ] A Criteria or return value from the target.
         def method_missing(name, *args, &block)
-          load!(:binding => true) and return super if target.respond_to?(name)
-          klass = metadata.klass
+          return super if target.respond_to?(name)
           klass.send(:with_scope, criteria) do
-            criteria.send(name, *args)
+            criteria.send(name, *args, &block)
           end
+        end
+
+        # Are we able to persist this relation?
+        #
+        # @example Can we persist the relation?
+        #   relation.persistable?
+        #
+        # @return [ true, false ] If the relation is persistable.
+        #
+        # @since 2.1.0
+        def persistable?
+          base.persisted? && !_binding?
         end
 
         # Reindex all the target elements. This is useful when performing
@@ -382,12 +418,13 @@ module Mongoid # :nodoc:
         # @param [ true, false ] destroy If true then destroy, else delete.
         #
         # @return [ Integer ] The number of documents removed.
-        def remove_all(conditions = {}, destroy = false)
-          criteria = find(conditions || {})
+        def remove_all(conditions = {}, method = :delete)
+          criteria = find(:all, conditions || {})
           criteria.size.tap do
             criteria.each do |doc|
-              target.delete(doc)
-              destroy ? doc.destroy : doc.delete
+              target.delete_one(doc)
+              doc.send(method, :suppress => true) unless _assigning?
+              unbind_one(doc)
             end
             reindex
           end
@@ -401,6 +438,7 @@ module Mongoid # :nodoc:
           # @example Get the builder.
           #   Embedded::Many.builder(meta, object)
           #
+          # @param [ Document ] base The base document.
           # @param [ Metadata ] meta The metadata of the relation.
           # @param [ Document, Hash ] object A document or attributes to build
           #   with.
@@ -408,8 +446,8 @@ module Mongoid # :nodoc:
           # @return [ Builder ] A newly instantiated builder object.
           #
           # @since 2.0.0.rc.1
-          def builder(meta, object)
-            Builders::Embedded::Many.new(meta, object)
+          def builder(base, meta, object)
+            Builders::Embedded::Many.new(base, meta, object)
           end
 
           # Returns true if the relation is an embedded one. In this case
@@ -464,6 +502,21 @@ module Mongoid # :nodoc:
             Builders::NestedAttributes::Many.new(metadata, attributes, options)
           end
 
+          # Get the path calculator for the supplied document.
+          #
+          # @example Get the path calculator.
+          #   Proxy.path(document)
+          #
+          # @param [ Document ] document The document to calculate on.
+          #
+          # @return [ Mongoid::Atomic::Paths::Embedded::Many ]
+          #   The embedded many atomic path calculator.
+          #
+          # @since 2.1.0
+          def path(document)
+            Mongoid::Atomic::Paths::Embedded::Many.new(document)
+          end
+
           # Tells the caller if this relation is one that stores the foreign
           # key on its own objects.
           #
@@ -475,6 +528,31 @@ module Mongoid # :nodoc:
           # @since 2.0.0.rc.1
           def stores_foreign_key?
             false
+          end
+
+          # Get the valid options allowed with this relation.
+          #
+          # @example Get the valid options.
+          #   Relation.valid_options
+          #
+          # @return [ Array<Symbol> ] The valid options.
+          #
+          # @since 2.1.0
+          def valid_options
+            [ :as, :cascade_callbacks, :cyclic, :order, :versioned ]
+          end
+
+          # Get the default validation setting for the relation. Determines if
+          # by default a validates associated will occur.
+          #
+          # @example Get the validation default.
+          #   Proxy.validation_default
+          #
+          # @return [ true, false ] The validation default.
+          #
+          # @since 2.1.9
+          def validation_default
+            true
           end
         end
       end

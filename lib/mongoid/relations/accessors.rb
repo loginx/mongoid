@@ -22,25 +22,9 @@ module Mongoid # :nodoc:
       # @return [ Proxy ] The relation.
       #
       # @since 2.0.0.rc.1
-      def build(name, object, metadata, options = {})
+      def build(name, object, metadata)
         relation = create_relation(object, metadata)
-        set(name, relation).tap do |relation|
-          relation.load!(options) if relation && options[:eager]
-        end
-      end
-
-      # Return the options passed to the builders.
-      #
-      # @example Get the options.
-      #   person.configurables(document, :continue => true)
-      #
-      # @param [ Array ] args The arguments to check.
-      #
-      # @return [ Hash ] The options.
-      #
-      # @since 2.0.0.rc.1
-      def options(args)
-        Mongoid.binding_defaults.merge(args.extract_options!)
+        set_relation(name, relation)
       end
 
       # Create a relation from an object and metadata.
@@ -56,7 +40,7 @@ module Mongoid # :nodoc:
       # @since 2.0.0.rc.1
       def create_relation(object, metadata)
         type = @attributes[metadata.inverse_type]
-        target = metadata.builder(object).build(type)
+        target = metadata.builder(self, object).build(type)
         target ? metadata.relation.new(self, target, metadata) : nil
       end
 
@@ -86,7 +70,7 @@ module Mongoid # :nodoc:
       # @return [ Proxy ] The relation.
       #
       # @since 2.0.0.rc.1
-      def set(name, relation)
+      def set_relation(name, relation)
         instance_variable_set("@#{name}", relation)
       end
 
@@ -109,16 +93,14 @@ module Mongoid # :nodoc:
           tap do
             define_method(name) do |*args|
               reload, variable = args.first, "@#{name}"
-              options = options(args)
               if instance_variable_defined?(variable) && !reload
                 instance_variable_get(variable)
               else
-                build(
-                  name,
-                  @attributes[metadata.key],
-                  metadata,
-                  options.merge(:binding => true, :eager => metadata.embedded?)
-                )
+                _building do
+                  _loading do
+                    build(name, attributes[metadata.key], metadata)
+                  end
+                end
               end
             end
           end
@@ -140,13 +122,12 @@ module Mongoid # :nodoc:
         # @since 2.0.0.rc.1
         def setter(name, metadata)
           tap do
-            define_method("#{name}=") do |*args|
-              object, options = args.first, options(args)
-              variable = "@#{name}"
-              if relation_exists?(name) && !object.is_a?(Hash)
-                set(name, ivar(name).substitute(object, options))
+            define_method("#{name}=") do |object|
+              if relation_exists?(name) || metadata.many? ||
+                (object.blank? && send(name))
+                set_relation(name, send(name).substitute(object.substitutable))
               else
-                build(name, object, metadata, options.merge(:eager => true))
+                build(name, object.substitutable, metadata)
               end
             end
           end

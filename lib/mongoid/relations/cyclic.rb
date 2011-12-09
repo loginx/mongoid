@@ -36,7 +36,6 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def recursively_embeds_many
-          self.cyclic = true
           embeds_many cyclic_child_name, :class_name => self.name, :cyclic => true
           embedded_in cyclic_parent_name, :class_name => self.name, :cyclic => true
         end
@@ -64,7 +63,6 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def recursively_embeds_one
-          self.cyclic = true
           embeds_one cyclic_child_name(false), :class_name => self.name, :cyclic => true
           embedded_in cyclic_parent_name, :class_name => self.name, :cyclic => true
         end
@@ -80,7 +78,7 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def cyclic_parent_name
-          ("parent_" << self.name.underscore.singularize).to_sym
+          ("parent_" << self.name.demodulize.underscore.singularize).to_sym
         end
 
         # Determines the child name given the class.
@@ -95,7 +93,7 @@ module Mongoid # :nodoc:
         #
         # @since 2.0.0.rc.1
         def cyclic_child_name(many = true)
-          ("child_" << self.name.underscore.send(many ? :pluralize : :singularize)).to_sym
+          ("child_" << self.name.demodulize.underscore.send(many ? :pluralize : :singularize)).to_sym
         end
       end
     end

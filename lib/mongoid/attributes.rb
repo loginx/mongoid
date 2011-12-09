@@ -6,35 +6,11 @@ module Mongoid #:nodoc:
   # This module contains the logic for handling the internal attributes hash,
   # and how to get and set values.
   module Attributes
+    extend ActiveSupport::Concern
     include Processing
 
-    # Returns the object type. This corresponds to the name of the class that
-    # this document is, which is used in determining the class to
-    # instantiate in various cases.
-    #
-    # @example Get the type.
-    #   person._type
-    #
-    # @return [ String ] The name of the class the document is.
-    #
-    # @since 1.0.0
-    def _type
-      @attributes["_type"]
-    end
-
-    # Set the type of the document. This should be the name of the class.
-    #
-    # @example Set the type
-    #   person._type = "Person"
-    #
-    # @param [ String ] new_type The name of the class.
-    #
-    # @return [ String ] the new type.
-    #
-    # @since 1.0.0
-    def _type=(new_type)
-      @attributes["_type"] = new_type
-    end
+    attr_reader :attributes
+    alias :raw_attributes :attributes
 
     # Determine if an attribute is present.
     #
@@ -47,37 +23,10 @@ module Mongoid #:nodoc:
     #
     # @since 1.0.0
     def attribute_present?(name)
-      !read_attribute(name).blank?
+      attribute = read_attribute(name)
+      ! attribute.blank? || attribute == false
     end
-
-    # Get the id associated with this object. This will pull the _id value out
-    # of the attributes.
-    #
-    # @example Get the id.
-    #   person.id
-    #
-    # @return [ BSON::ObjectId, String ] The id of the document.
-    #
-    # @since 1.0.0
-    def id
-      @attributes["_id"]
-    end
-    alias :_id :id
-
-    # Set the id of the document to a new one.
-    #
-    # @example Set the id.
-    #   person.id = BSON::ObjectId.new
-    #
-    # @param [ BSON::ObjectId, String ] new_id The new id.
-    #
-    # @return [ BSON::ObjectId, String ] The new id.
-    #
-    # @since 1.0.0
-    def id=(new_id)
-      @attributes["_id"] = _id_type.set(new_id)
-    end
-    alias :_id= :id=
+    alias :has_attribute? :attribute_present?
 
     # Read a value from the document attributes. If the value does not exist
     # it will return nil.
@@ -94,10 +43,7 @@ module Mongoid #:nodoc:
     #
     # @since 1.0.0
     def read_attribute(name)
-      access = name.to_s
-      value = @attributes[access]
-      typed_value = fields.has_key?(access) ? fields[access].get(value) : value
-      accessed(access, typed_value)
+      attributes[name.to_s]
     end
     alias :[] :read_attribute
 
@@ -111,8 +57,11 @@ module Mongoid #:nodoc:
     #
     # @since 1.0.0
     def remove_attribute(name)
-      access = name.to_s
-      modify(access, @attributes.delete(name.to_s), nil)
+      _assigning do
+        access = name.to_s
+        attribute_will_change!(access)
+        attributes.delete(access)
+      end
     end
 
     # Override respond_to? so it responds properly for dynamic attributes.
@@ -127,8 +76,8 @@ module Mongoid #:nodoc:
     # @since 1.0.0
     def respond_to?(*args)
       (Mongoid.allow_dynamic_fields &&
-        @attributes &&
-        @attributes.has_key?(args.first.to_s)
+        attributes &&
+        attributes.has_key?(args.first.to_s)
       ) || super
     end
 
@@ -147,10 +96,45 @@ module Mongoid #:nodoc:
     #
     # @since 1.0.0
     def write_attribute(name, value)
-      access = name.to_s
-      modify(access, @attributes[access], typed_value_for(access, value))
+      _assigning do
+        access = name.to_s
+        localized = fields[access].try(:localized?)
+        typed_value_for(access, value).tap do |value|
+          unless attributes[access] == value || attribute_changed?(access)
+            attribute_will_change!(access)
+          end
+          if localized
+            (attributes[access] ||= {}).merge!(value)
+          else
+            attributes[access] = value
+          end
+        end
+      end
     end
     alias :[]= :write_attribute
+
+    # Allows you to set all the attributes for a particular mass-assignment security role
+    # by passing in a hash of attributes with keys matching the attribute names
+    # (which again matches the column names)  and the role name using the :as option.
+    # To bypass mass-assignment security you can use the :without_protection => true option.
+    #
+    # @example Assign the attributes.
+    #   person.assign_attributes(:title => "Mr.")
+    #
+    # @example Assign the attributes (with a role).
+    #   person.assign_attributes({ :title => "Mr." }, :as => :admin)
+    #
+    # @param [ Hash ] attrs The new attributes to set.
+    # @param [ Hash ] options Supported options: :without_protection, :as
+    #
+    # @since 2.2.1
+    def assign_attributes(attrs = nil, options = {})
+      _assigning do
+        process(attrs, options[:as] || :default, !options[:without_protection]) do |document|
+          document.identify if new? && id.blank?
+        end
+      end
+    end
 
     # Writes the supplied attributes hash to the document. This will only
     # overwrite existing attributes if they are present in the new +Hash+, all
@@ -163,31 +147,32 @@ module Mongoid #:nodoc:
     #   person.attributes = { :title => "Mr." }
     #
     # @param [ Hash ] attrs The new attributes to set.
+    # @param [ Boolean ] guard_protected_attributes False to skip mass assignment protection.
     #
     # @since 1.0.0
-    def write_attributes(attrs = nil)
-      process(attrs) do |document|
-        document.identify if new? && id.blank?
-      end
+    def write_attributes(attrs = nil, guard_protected_attributes = true)
+      assign_attributes(attrs, :without_protection => !guard_protected_attributes)
     end
     alias :attributes= :write_attributes
 
     protected
 
-    # Get the default values for the attributes.
+    # Set any missing default values in the attributes.
     #
-    # @example Get the defaults.
-    #   person.default_attributes
+    # @example Get the raw attributes after defaults have been applied.
+    #   person.apply_defaults
     #
-    # @return [ Hash ] The default values for each field.
+    # @return [ Hash ] The raw attributes.
     #
-    # @since 1.0.0
-    def default_attributes
-      default_values = defaults
-      default_values.each_pair do |key, val|
-        default_values[key] = typed_value_for(key, val.call) if val.respond_to?(:call)
+    # @since 2.0.0.rc.8
+    def apply_defaults
+      defaults.each do |name|
+        unless attributes.has_key?(name)
+          if field = fields[name]
+            attributes[name] = field.eval_default(self)
+          end
+        end
       end
-      default_values || {}
     end
 
     # Used for allowing accessor methods for dynamic attributes.
@@ -196,7 +181,7 @@ module Mongoid #:nodoc:
     # @param [ Array ] *args The arguments to the method.
     def method_missing(name, *args)
       attr = name.to_s
-      return super unless @attributes.has_key?(attr.reader)
+      return super unless attributes.has_key?(attr.reader)
       if attr.writer?
         write_attribute(attr.reader, (args.size > 1) ? args : args.first)
       else
@@ -216,7 +201,34 @@ module Mongoid #:nodoc:
     #
     # @since 1.0.0
     def typed_value_for(key, value)
-      fields.has_key?(key) ? fields[key].set(value) : value
+      fields.has_key?(key) ? fields[key].serialize(value) : value
+    end
+
+    module ClassMethods #:nodoc:
+
+      # Alias the provided name to the original field. This will provide an
+      # aliased getter, setter, existance check, and all dirty attribute
+      # methods.
+      #
+      # @example Alias the attribute.
+      #   class Product
+      #     include Mongoid::Document
+      #     field :price, :type => Float
+      #     alias_attribute :cost, :price
+      #   end
+      #
+      # @param [ Symbol ] name The new name.
+      # @param [ Symbol ] original The original name.
+      #
+      # @since 2.3.0
+      def alias_attribute(name, original)
+        class_eval <<-RUBY
+          alias :#{name} :#{original}
+          alias :#{name}= :#{original}=
+          alias :#{name}? :#{original}?
+        RUBY
+        super
+      end
     end
   end
 end

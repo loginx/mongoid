@@ -9,10 +9,19 @@ module Mongoid #:nodoc:
 
     included do
       field :version, :type => Integer, :default => 1
-      embeds_many :versions, :class_name => self.name, :validate => false
-      set_callback :save, :before, :revise, :if => :changed?
 
-      delegate :version_max, :to => "self.class"
+      embeds_many \
+        :versions,
+        :class_name => self.name,
+        :validate => false,
+        :cyclic => true,
+        :inverse_of => nil,
+        :versioned => true
+
+      set_callback :save, :before, :revise, :if => :revisable?
+
+      class_attribute :version_max
+      self.cyclic = true
     end
 
     # Create a new version of the +Document+. This will load the previous
@@ -22,18 +31,147 @@ module Mongoid #:nodoc:
     #
     # @example Revise the document.
     #   person.revise
+    #
+    # @since 1.0.0
     def revise
-      last_version = self.class.first(:conditions => { :_id => id, :version => version })
-      if last_version
-        versions.target << last_version.clone
-        versions.shift if version_max.present? && versions.length > version_max
+      previous = previous_revision
+      if previous && versioned_attributes_changed?
+        versions.build(
+          previous.versioned_attributes, :without_protection => true
+        ).attributes.delete("_id")
+        if version_max.present? && versions.length > version_max
+          versions.delete(versions.first)
+        end
         self.version = (version || 1 ) + 1
-        @modifications["versions"] = [ nil, versions.as_document ] if @modifications
+      end
+    end
+
+    # Forces the creation of a new version of the +Document+, regardless of
+    # whether a change was actually made.
+    #
+    # @example Revise the document.
+    #   person.revise!
+    #
+    # @since 2.2.1
+    def revise!
+      new_version = versions.build(
+        (previous_revision || self).versioned_attributes, :without_protection => true
+      )
+      versions.shift if version_max.present? && versions.length > version_max
+      self.version = (version || 1 ) + 1
+      save
+    end
+
+    # Filters the results of +changes+ by removing any fields that should
+    # not be versioned.
+    #
+    # @return [ Hash ] A hash of versioned changed attributes.
+    #
+    # @since 2.1.0
+    def versioned_changes
+      only_versioned_attributes(changes)
+    end
+
+    # Filters the results of +attributes+ by removing any fields that should
+    # not be versioned.
+    #
+    # @return [ Hash ] A hash of versioned attributes.
+    #
+    # @since 2.1.0
+    def versioned_attributes
+      only_versioned_attributes(attributes)
+    end
+
+    # Check if any versioned fields have been modified. This is similar
+    # to +changed?+, except this method also ignores fields set to be
+    # ignored by versioning.
+    #
+    # @return [ Boolean ] Whether fields that will be versioned have changed.
+    #
+    # @since 2.1.0
+    def versioned_attributes_changed?
+      !versioned_changes.empty?
+    end
+
+    # Executes a block that temporarily disables versioning. This is for cases
+    # where you do not want to version on every save.
+    #
+    # @example Execute a save without versioning.
+    #   person.versionless(&:save)
+    #
+    # @return [ Object ] The document or result of the block execution.
+    #
+    # @since 2.0.0
+    def versionless
+      @versionless = true
+      result = yield(self) if block_given?
+      @versionless = false
+      result || self
+    end
+
+    private
+
+    # Find the previous version of this document in the database, or if the
+    # document had been saved without versioning return the persisted one.
+    #
+    # @example Find the last version.
+    #   document.find_last_version
+    #
+    # @return [ Document, nil ] The previously saved document.
+    #
+    # @since 2.0.0
+    def previous_revision
+      _loading_revision do
+        self.class.
+          where(:_id => id).
+          any_of({ :version => version }, { :version => nil }).first
+      end
+    end
+
+    # Is the document able to be revised? This is true if the document has
+    # changed and we have not explicitly told it not to version.
+    #
+    # @example Is the document revisable?
+    #   document.revisable?
+    #
+    # @return [ true, false ] If the document is revisable.
+    #
+    # @since 2.0.0
+    def revisable?
+      versioned_attributes_changed? && !versionless?
+    end
+
+    # Are we in versionless mode? This is true if in a versionless block on the
+    # document.
+    #
+    # @example Is the document in versionless mode?
+    #   document.versionless?
+    #
+    # @return [ true, false ] Is the document not currently versioning.
+    #
+    # @since 2.0.0
+    def versionless?
+      !!@versionless
+    end
+
+    # Filters fields that should not be versioned out of an attributes hash.
+    # Dynamic attributes are always versioned.
+    #
+    # @param [ Hash ] A hash with field names as keys.
+    #
+    # @return [ Hash ] The hash without non-versioned columns.
+    #
+    # @since 2.1.0
+    def only_versioned_attributes(hash)
+      {}.tap do |versioned|
+        hash.except("versions").each_pair do |name, value|
+          field = fields[name]
+          versioned[name] = value if !field || field.versioned?
+        end
       end
     end
 
     module ClassMethods #:nodoc:
-      attr_accessor :version_max
 
       # Sets the maximum number of versions to store.
       #

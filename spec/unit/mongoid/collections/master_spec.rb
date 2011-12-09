@@ -15,7 +15,7 @@ describe Mongoid::Collections::Master do
   end
 
   before do
-    db.expects(:collection).with("people").returns(collection)
+    db.expects(:create_collection).with("people", {}).returns(collection)
   end
 
   context "Mongo::Collection operations" do
@@ -33,6 +33,11 @@ describe Mongoid::Collections::Master do
         end
 
         it "delegates to the collection" do
+          master.send(name)
+        end
+
+        it "retries on connection failure" do
+          master.expects(:retry_on_connection_failure).then.yields
           master.send(name)
         end
       end

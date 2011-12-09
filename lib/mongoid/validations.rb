@@ -10,7 +10,25 @@ module Mongoid #:nodoc:
     extend ActiveSupport::Concern
     include ActiveModel::Validations
 
-    attr_accessor :validated
+    # Begin the associated validation.
+    #
+    # @example Begin validation.
+    #   document.begin_validate
+    #
+    # @since 2.1.9
+    def begin_validate
+      Threaded.begin_validate(self)
+    end
+
+    # Exit the associated validation.
+    #
+    # @example Exit validation.
+    #   document.exit_validate
+    #
+    # @since 2.1.9
+    def exit_validate
+      Threaded.exit_validate(self)
+    end
 
     # Overrides the default ActiveModel behaviour since we need to handle
     # validations of relations slightly different than just calling the
@@ -26,7 +44,10 @@ module Mongoid #:nodoc:
     # @since 2.0.0.rc.1
     def read_attribute_for_validation(attr)
       if relations[attr.to_s]
-        send(attr, false, :eager => true)
+        begin_validate
+        relation = send(attr)
+        exit_validate
+        relation.do_or_do_not(:in_memory) || relation
       else
         send(attr)
       end
@@ -58,7 +79,7 @@ module Mongoid #:nodoc:
     #
     # @since 2.0.0.rc.2
     def validated?
-      !!@validated
+      Threaded.validated?(self)
     end
 
     module ClassMethods #:nodoc:
@@ -104,13 +125,15 @@ module Mongoid #:nodoc:
       # was not provided or set to true.
       #
       # @example Set up validation.
-      #   Person.validate_relation(metadata)
+      #   Person.validates_relation(metadata)
       #
       # @param [ Metadata ] metadata The relation metadata.
       #
       # @since 2.0.0.rc.1
-      def validate_relation(metadata)
-        validates_associated(metadata.name) if metadata.validate?
+      def validates_relation(metadata)
+        if metadata.validate?
+          validates_associated(metadata.name)
+        end
       end
     end
   end

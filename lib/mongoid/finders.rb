@@ -1,24 +1,27 @@
 # encoding: utf-8
 module Mongoid #:nodoc:
-  module Finders #:nodoc:
+
+  # This module defines the finder methods that hang off the document at the
+  # class level.
+  module Finders
 
     # Delegate to the criteria methods that are natural for creating a new
     # criteria.
-    [ :all_in, :any_in, :any_of, :asc, :ascending, :avg, :desc, :descending,
-      :excludes, :limit, :max, :min, :not_in, :only, :order_by,
-      :skip, :sum, :where, :update, :update_all, :near ].each do |name|
-      define_method(name) do |*args|
-        criteria.send(name, *args)
-      end
-    end
+    critera_methods = [ :all_in, :all_of, :any_in, :any_of, :asc, :ascending,
+                        :avg, :desc, :descending, :excludes,
+                        :includes, :limit, :max, :min, :not_in, :only,
+                        :order_by, :search, :skip, :sum, :without, :where,
+                        :update, :update_all, :near ]
+    delegate *(critera_methods.dup << { :to => :criteria })
 
-    # Find +Documents+ given the conditions.
+    # Find all documents that match the given conditions.
     #
-    # Options:
+    # @example Find all matching documents given conditions.
+    #   Person.all(:conditions => { :attribute => "value" })
     #
-    # args: A +Hash+ with a conditions key and other options
+    # @param [ Array ] args The conditions with options.
     #
-    # <tt>Person.all(:conditions => { :attribute => "value" })</tt>
+    # @return [ Criteria ] The matching documents.
     def all(*args)
       find(:all, *args)
     end
@@ -26,27 +29,35 @@ module Mongoid #:nodoc:
     # Returns a count of matching records in the database based on the
     # provided arguments.
     #
-    # <tt>Person.count(:conditions => { :attribute => "value" })</tt>
+    # @example Get the count of matching documents.
+    #   Person.count(:conditions => { :attribute => "value" })
+    #
+    # @param [ Array ] args The conditions.
+    #
+    # @return [ Integer ] The number of matching documents.
     def count(*args)
-      Criteria.translate(self, false, *args).count
+      find(:all, *args).count
+    end
+
+    # Returns true if count is zero
+    #
+    # @example Are there no saved documents for this model?
+    #   Person.empty?
+    #
+    # @return [ true, false ] If the collection is empty.
+    def empty?
+      count == 0
     end
 
     # Returns true if there are on document in database based on the
     # provided arguments.
     #
-    # <tt>Person.exists?(:conditions => { :attribute => "value" })</tt>
+    # @example Do any documents exist for the conditions?
+    #   Person.exists?(:conditions => { :attribute => "value" })
+    #
+    # @param [ Array ] args The conditions.
     def exists?(*args)
-      Criteria.translate(self, false, *args).limit(1).count == 1
-    end
-
-    # Helper to initialize a new +Criteria+ object for this class, or return
-    # the currently scoped +Criteria+ object.
-    #
-    # Example:
-    #
-    # <tt>Person.criteria</tt>
-    def criteria(embedded = false)
-      scope_stack.last || Criteria.new(self, embedded)
+       find(:all, *args).count > 0
     end
 
     # Find a +Document+ in several different ways.
@@ -57,117 +68,85 @@ module Mongoid #:nodoc:
     # it will attempt to find either a single +Document+ or multiples based
     # on the conditions provided and the first parameter.
     #
-    # Example:
+    # @example Find the first matching document.
+    #   Person.find(:first, :conditions => { :attribute => "value" })
     #
-    # <tt>Person.find(:first, :conditions => { :attribute => "value" })</tt>
-    # <tt>Person.find(:all, :conditions => { :attribute => "value" })</tt>
-    # <tt>Person.find(BSON::ObjectId)</tt>
+    # @example Find all matching documents.
+    #   Person.find(:all, :conditions => { :attribute => "value" })
     #
-    # Options:
+    # @example Find a single document by an id.
+    #   Person.find(BSON::ObjectId)
     #
-    # args: An assortment of finder options.
+    # @param [ Array ] args An assortment of finder options.
     #
-    # Returns:
-    #
-    # A document or criteria.
+    # @return [ Document, nil, Criteria ] A document or matching documents.
     def find(*args)
-      raise Errors::InvalidOptions.new(
-        :calling_document_find_with_nil_is_invalid, {}
-      ) if args[0].nil?
-      type, criteria = Criteria.parse!(self, false, *args)
-      case type
-      when :first then return criteria.one
-      when :last then return criteria.last
-      else
-        return criteria
-      end
+      criteria.find(*args)
     end
 
     # Find the first +Document+ given the conditions, or creates a new document
-    # with the conditions that were supplied
+    # with the conditions that were supplied.
     #
-    # Options:
+    # @example Find or create the document.
+    #   Person.find_or_create_by(:attribute => "value")
     #
-    # args: A +Hash+ of attributes
+    # @param [ Hash ] attrs The attributes to check.
     #
-    # <tt>Person.find_or_create_by(:attribute => "value")</tt>
-    def find_or_create_by(attrs = {})
-      find_or(:create, attrs)
+    # @return [ Document ] A matching or newly created document.
+    def find_or_create_by(attrs = {}, &block)
+      find_or(:create, attrs, &block)
     end
 
-    # Find the first +Document+ given the conditions, or instantiates a new document
-    # with the conditions that were supplied
+    # Find the first +Document+ given the conditions, or initializes a new document
+    # with the conditions that were supplied.
     #
-    # Options:
+    # @example Find or initialize the document.
+    #   Person.find_or_initialize_by(:attribute => "value")
     #
-    # args: A +Hash+ of attributes
+    # @param [ Hash ] attrs The attributes to check.
     #
-    # <tt>Person.find_or_initialize_by(:attribute => "value")</tt>
-    def find_or_initialize_by(attrs = {})
-      find_or(:new, attrs)
+    # @return [ Document ] A matching or newly initialized document.
+    def find_or_initialize_by(attrs = {}, &block)
+      find_or(:new, attrs, &block)
     end
 
     # Find the first +Document+ given the conditions.
     #
-    # Options:
+    # @example Find the first document.
+    #   Person.first(:conditions => { :attribute => "value" })
     #
-    # args: A +Hash+ with a conditions key and other options
+    # @param [ Array ] args The conditions with options.
     #
-    # <tt>Person.first(:conditions => { :attribute => "value" })</tt>
+    # @return [ Document ] The first matching document.
     def first(*args)
       find(:first, *args)
     end
 
     # Find the last +Document+ given the conditions.
     #
-    # Options:
+    # @example Find the last document.
+    #   Person.last(:conditions => { :attribute => "value" })
     #
-    # args: A +Hash+ with a conditions key and other options
+    # @param [ Array ] args The conditions with options.
     #
-    # <tt>Person.last(:conditions => { :attribute => "value" })</tt>
+    # @return [ Document ] The last matching document.
     def last(*args)
       find(:last, *args)
     end
 
-    # Find all documents in paginated fashion given the supplied arguments.
-    # If no parameters are passed just default to offset 0 and limit 20.
-    #
-    # Options:
-    #
-    # params: A +Hash+ of params to pass to the Criteria API.
-    #
-    # Example:
-    #
-    # <tt>Person.paginate(:conditions => { :field => "Test" }, :page => 1,
-    # :per_page => 20)</tt>
-    #
-    # Returns paginated array of docs.
-    def paginate(params = {})
-      Criteria.translate(self, false, params).paginate
-    end
-
     protected
+
     # Find the first object or create/initialize it.
-    def find_or(method, attrs = {})
-      first(:conditions => attrs) || send(method, attrs)
-    end
-
-    # Initializes and returns the current scope stack.
-    def scope_stack
-      scope_stack_for = Thread.current[:mongoid_scope_stack] ||= {}
-      scope_stack_for[object_id] ||= []
-    end
-
-    # Pushes the provided criteria onto the scope stack, and removes it after the
-    # provided block is yielded.
-    def with_scope(criteria)
-      scope_stack = self.scope_stack
-      scope_stack << criteria
-      begin
-        yield criteria
-      ensure
-        scope_stack.pop
-      end
+    #
+    # @example Find or perform an action.
+    #   Person.find_or(:create, :name => "Dev")
+    #
+    # @param [ Symbol ] method The method to invoke.
+    # @param [ Hash ] attrs The attributes to query or set.
+    #
+    # @return [ Document ] The first or new document.
+    def find_or(method, attrs = {}, &block)
+      first(:conditions => attrs) || send(method, attrs, &block)
     end
   end
 end
