@@ -38,6 +38,8 @@ For instructions on upgrading to newer versions, visit
 * \#1363 Added fallbacks and default support to localized fields, and added
   ability to get and set all translations at once.
 
+* \#1362 Aliased fields now properly typecast in criteria.
+
 ### Resolved Issues
 
 * \#1483 Sending module includes at runtime which add new fields to a parent
@@ -86,6 +88,8 @@ For instructions on upgrading to newer versions, visit
 
 * \#1381, \#1371 The identity map now functions properly with inherited
   documents. (Paul Canavese)
+
+* \#1366 Array and hash values now get deep copied for dirty tracking.
 
 * \#1359 Provide ability to not have default scope applied to all named
   scopes via using lambdas.

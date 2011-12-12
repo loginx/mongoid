@@ -188,16 +188,16 @@ describe Mongoid::Criterion::Inclusion do
   describe "#all_of" do
 
     let!(:person_one) do
-      Person.create(:ssn => "354-12-1221")
+      Person.safely.create!(:ssn => "354-12-1221")
     end
 
     let!(:person_two) do
-      Person.create(:ssn => "354-12-1222")
+      Person.safely.create!(:ssn => "354-12-1222")
     end
 
     context "when providing object ids" do
 
-      let(:from_db) do
+      let!(:from_db) do
         Person.all_of(
           { :_id.in => [ person_one.id, person_two.id ] },
           { :_id => person_two.id }
@@ -211,7 +211,7 @@ describe Mongoid::Criterion::Inclusion do
 
     context "when providing string ids" do
 
-      let(:from_db) do
+      let!(:from_db) do
         Person.all_of(
           { :_id.in => [ person_one.id.to_s, person_two.id.to_s ] },
           { :_id => person_two.id.to_s }
@@ -225,12 +225,20 @@ describe Mongoid::Criterion::Inclusion do
 
     context "when providing no expressions" do
 
-      let(:from_db) do
-        Person.all_of()
+      let!(:from_db) do
+        Person.all_of
       end
 
-      it "returns all documents" do
-        from_db.should eq([ person_one, person_two ])
+      it "returns the first document" do
+        from_db.should include(person_one)
+      end
+
+      it "returns the second document" do
+        from_db.should include(person_two)
+      end
+
+      it "returns only the matching documents" do
+        from_db.count.should eq(2)
       end
     end
   end
