@@ -10,6 +10,9 @@ For instructions on upgrading to newer versions, visit
 * Ranges can now be passed to #where criteria to create a $gte/$lte query under the
   covers. `Person.where(dob: start_date...end_date)`
 
+* \#1496 Mongoid now casts strings back to symbols for symbol fields that
+  get saved as strings by another application.
+
 * \#1454, \#900 Associations now have an `after_build` callback that gets
   executed after `.build` or `build_` methods are called.
   (Jeffrey Jones, Ryan Townsend)
@@ -41,6 +44,10 @@ For instructions on upgrading to newer versions, visit
 * \#1362 Aliased fields now properly typecast in criteria.
 
 ### Resolved Issues
+
+* \#1497 Use provided message on failing uniqueness validation. (Justin Etheredge)
+
+* \#1491 Return nil when no default set on localized fields. (Tiago Rafael Godinho)
 
 * \#1483 Sending module includes at runtime which add new fields to a parent
   document, also have the fields added to subclasses.
