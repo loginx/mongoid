@@ -145,7 +145,11 @@ module Mongoid #:nodoc:
     #
     # @since 2.4.0
     def to_key
-      new_record? ? nil : [ id ]
+      if destroyed?
+        [ id ]
+      else
+        persisted? ? [ id ] : nil
+      end
     end
 
     # Return an array with this +Document+ only in it.
@@ -168,7 +172,7 @@ module Mongoid #:nodoc:
     # @return [ Hash ] A hash of all attributes in the hierarchy.
     def as_document
       attributes.tap do |attrs|
-        break if frozen?
+        return attrs if frozen?
         relations.each_pair do |name, meta|
           if meta.embedded?
             relation = send(name)

@@ -10,6 +10,14 @@ For instructions on upgrading to newer versions, visit
 * Ranges can now be passed to #where criteria to create a $gte/$lte query under the
   covers. `Person.where(dob: start_date...end_date)`
 
+* \#1506 `Model.set` will now accept false and nil values. (Marten Veldthuis)
+
+* \#1505 `Model.delete_all/destroy_all` now take either a :conditions hash or
+  the attributes directly.
+
+* \#1504 `Model.recursively_embeds_many` now accepts a :cascade_callbacks
+  option. (Pavel Pravosud)
+
 * \#1496 Mongoid now casts strings back to symbols for symbol fields that
   get saved as strings by another application.
 
@@ -44,6 +52,15 @@ For instructions on upgrading to newer versions, visit
 * \#1362 Aliased fields now properly typecast in criteria.
 
 ### Resolved Issues
+
+* Calling `Document#as_document` on a frozen document on Rubinius returns the
+  attributes instead of nil.
+
+* \#1517 Fix Mongoid documents to properly work with RSpec's stub_model.
+  (Tiago Rafael Godinho)
+
+* #1502 Nested attributes on embedded documents respects if the child is
+  paranoid.
 
 * \#1497 Use provided message on failing uniqueness validation. (Justin Etheredge)
 
@@ -88,6 +105,9 @@ For instructions on upgrading to newer versions, visit
 
 * \#1439 embedded? should return true when relation defined as cyclic.
 
+* \#1433 Polymorphic nested attributes for embedded and relational 1-1 now
+  update properly.
+
 * \#1426 Frozen documents can now be cloned. (aagrawal2001)
 
 * \#1382 Raise proper error when creating indexes via rake task if index
@@ -102,6 +122,9 @@ For instructions on upgrading to newer versions, visit
   scopes via using lambdas.
 
 * \#1333 Fixed errors with custom types that exist in namespaces. (Peter Gumeson)
+
+* \#1259 Default values are treated as dirty if they differ from the database
+  state.
 
 ## 2.3.4
 
@@ -345,6 +368,11 @@ For instructions on upgrading to newer versions, visit
 
 * Deleting versions created with `Mongoid::Versioning` no longer fires off
   dependent cascading on relations.
+
+## 2.2.5
+
+* This was a small patch release to address 2.2.x Heroku errors during asset
+  compilation.
 
 ## 2.2.4
 
