@@ -56,6 +56,10 @@ For instructions on upgrading to newer versions, visit
 * Calling `Document#as_document` on a frozen document on Rubinius returns the
   attributes instead of nil.
 
+* \#1523 Allow disabling of observers via `disable`. (Jonas Schneider)
+
+* \#1522 Fixed create indexes rake task for Rails 3.2. (Gray Manley)
+
 * \#1517 Fix Mongoid documents to properly work with RSpec's stub_model.
   (Tiago Rafael Godinho)
 
@@ -115,6 +119,9 @@ For instructions on upgrading to newer versions, visit
 
 * \#1381, \#1371 The identity map now functions properly with inherited
   documents. (Paul Canavese)
+
+* \#1370 Split concat on embedded arrays into its own method to handle the
+  batch processing due to after callback run execution issues.
 
 * \#1366 Array and hash values now get deep copied for dirty tracking.
 
