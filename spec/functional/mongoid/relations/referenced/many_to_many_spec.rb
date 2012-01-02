@@ -543,7 +543,6 @@ describe Mongoid::Relations::Referenced::ManyToMany do
           it "maintains the base on the inverse relation" do
             preference.people.first.should == person
           end
-
         end
       end
 
@@ -2117,6 +2116,59 @@ describe Mongoid::Relations::Referenced::ManyToMany do
         it "returns the total number of documents" do
           person.preferences.send(method).should == 2
         end
+      end
+    end
+  end
+
+  describe "#unscoped" do
+
+    context "when the relation has no default scope" do
+
+      let!(:person) do
+        Person.create(:ssn => "123-11-1111")
+      end
+
+      let!(:preference_one) do
+        person.preferences.create(:name => "first")
+      end
+
+      let!(:preference_two) do
+        Preference.create(:name => "second")
+      end
+
+      let(:unscoped) do
+        person.preferences.unscoped
+      end
+
+      it "returns only the associated documents" do
+        unscoped.should eq([ preference_one ])
+      end
+    end
+
+    context "when the relation has a default scope" do
+
+      let!(:person) do
+        Person.create(:ssn => "333-33-3322")
+      end
+
+      let!(:house_one) do
+        person.houses.create(:name => "first")
+      end
+
+      let!(:house_two) do
+        House.create(:name => "second")
+      end
+
+      let(:unscoped) do
+        person.houses.unscoped
+      end
+
+      it "only returns associated documents" do
+        unscoped.should eq([ house_one ])
+      end
+
+      it "removes the default scoping options" do
+        unscoped.options.should eq({})
       end
     end
   end

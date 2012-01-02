@@ -10,6 +10,9 @@ For instructions on upgrading to newer versions, visit
 * Ranges can now be passed to #where criteria to create a $gte/$lte query under the
   covers. `Person.where(dob: start_date...end_date)`
 
+* Custom serializable fields can now override #selection to provide
+  customized serialization for criteria queries.
+
 * \#1506 `Model.set` will now accept false and nil values. (Marten Veldthuis)
 
 * \#1505 `Model.delete_all/destroy_all` now take either a :conditions hash or
@@ -51,10 +54,27 @@ For instructions on upgrading to newer versions, visit
 
 * \#1362 Aliased fields now properly typecast in criteria.
 
+* \#1337 Array fields, including HABTM many foreign keys now have smarter dirty
+  checking and no longer perform a simple $set if the array has changed. If
+  items have only been added to the array, it performs a $pushAll. If items
+  have only been removed, it performs a $pullAll. If both additions and
+  removals have occurred it performs a $set to avoid conflicting mods.
+
 ### Resolved Issues
 
 * Calling `Document#as_document` on a frozen document on Rubinius returns the
   attributes instead of nil.
+
+* \#1542 Eager loading now respects the options (ie skip, limit) provided to
+  the criteria when fetch the associations.
+
+* \#1530 Don't duplicate added values to arrays via dirty tracking if the
+  array is a foreign key field.
+
+* \#1529 Calling `unscoped` on relational associations now works properly.
+
+* \#1524 Allow access to relations in overridden field setters by pre-setting
+  foreign key default values.
 
 * \#1523 Allow disabling of observers via `disable`. (Jonas Schneider)
 
@@ -63,7 +83,15 @@ For instructions on upgrading to newer versions, visit
 * \#1517 Fix Mongoid documents to properly work with RSpec's stub_model.
   (Tiago Rafael Godinho)
 
-* #1502 Nested attributes on embedded documents respects if the child is
+* \#1516 Don't duplicate relational many documents on bind.
+
+* \#1515 Mongoid no longer attempts to serialize custom fields on complex
+  criteria by default.
+
+* \#1503 Has many relation substitution now handles any kind of mix of existing
+  and new docs.
+
+* \#1502 Nested attributes on embedded documents respects if the child is
   paranoid.
 
 * \#1497 Use provided message on failing uniqueness validation. (Justin Etheredge)
@@ -92,6 +120,9 @@ For instructions on upgrading to newer versions, visit
 
 * \#1463 Batch insert consumers are now scoped to collection to avoid persistence
   of documents to other collections in callbacks going to the wrong place.
+
+* \#1462 Assigning has many relations via nested attribtues `*_attributes=` does
+  not autosave the relation.
 
 * \#1461 Fixed serialization of foreign key fields in complex criteria not to
   escape the entire hash.
