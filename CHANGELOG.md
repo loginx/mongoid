@@ -13,6 +13,10 @@ For instructions on upgrading to newer versions, visit
 * Custom serializable fields can now override #selection to provide
   customized serialization for criteria queries.
 
+* \#1544 Internals use `Array.wrap` instead of `to_a` now where possible.
+
+* \#1511 Presence validation now supports localized fields. (Tiago Rafael Godinho)
+
 * \#1506 `Model.set` will now accept false and nil values. (Marten Veldthuis)
 
 * \#1505 `Model.delete_all/destroy_all` now take either a :conditions hash or
@@ -64,6 +68,15 @@ For instructions on upgrading to newer versions, visit
 
 * Calling `Document#as_document` on a frozen document on Rubinius returns the
   attributes instead of nil.
+
+* \#1554 Split application of default values into proc/non-procs, where
+  non-procs get executed immediately during instantiation, and procs get
+  executed after all other values are set.
+
+* \#1553 Combinations of adding and removing values from an array use a $set
+  on the current contents of the array, not the new values.
+
+* \#1546 Dirty changes should be returned in a hash with indifferent access.
 
 * \#1542 Eager loading now respects the options (ie skip, limit) provided to
   the criteria when fetch the associations.
@@ -163,6 +176,8 @@ For instructions on upgrading to newer versions, visit
 
 * \#1259 Default values are treated as dirty if they differ from the database
   state.
+
+* \#1255 Ensure embedded documents respect the defined default scope.
 
 ## 2.3.4
 
