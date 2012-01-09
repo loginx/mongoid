@@ -44,7 +44,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            post.should be_new
+            post.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -185,7 +185,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            rating.should be_new
+            rating.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -227,12 +227,22 @@ describe Mongoid::Relations::Referenced::Many do
         context "when parent has String identity" do
 
           before do
-            Movie.identity :type => String
+            Movie.field(
+              :_id,
+              type: String,
+              pre_processed: true,
+              default: ->{ BSON::ObjectId.new.to_s }
+            )
             movie.ratings << Rating.new
           end
 
           after do
-            Movie.identity :type => BSON::ObjectId
+            Movie.field(
+              :_id,
+              type: BSON::ObjectId,
+              pre_processed: true,
+              default: ->{ BSON::ObjectId.new }
+            )
           end
 
           let(:movie) do
@@ -740,7 +750,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            post.should be_new
+            post.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -775,7 +785,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            post.should be_new
+            post.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -809,7 +819,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            rating.should be_new
+            rating.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -844,7 +854,7 @@ describe Mongoid::Relations::Referenced::Many do
           end
 
           it "does not save the target" do
-            rating.should be_new
+            rating.should be_new_record
           end
 
           it "adds the document to the target" do
@@ -1031,7 +1041,7 @@ describe Mongoid::Relations::Referenced::Many do
         end
 
         it "does not save the target" do
-          post.should be_new
+          post.should be_new_record
         end
 
         it "adds the document to the target" do
@@ -1173,7 +1183,7 @@ describe Mongoid::Relations::Referenced::Many do
       end
 
       it "does not save the target" do
-        rating.should be_new
+        rating.should be_new_record
       end
 
       it "adds the document to the target" do
@@ -1215,12 +1225,22 @@ describe Mongoid::Relations::Referenced::Many do
     context "when parent has String identity" do
 
       before do
-        Movie.identity :type => String
+        Movie.field(
+          :_id,
+          pre_processeded: true,
+          type: String,
+          default: ->{ BSON::ObjectId.new.to_s }
+        )
         movie.ratings << Rating.new
       end
 
       after do
-        Movie.identity :type => BSON::ObjectId
+        Movie.field(
+          :_id,
+          pre_processeded: true,
+          type: BSON::ObjectId,
+          default: ->{ BSON::ObjectId.new }
+        )
       end
 
       let(:movie) do
@@ -1405,7 +1425,7 @@ describe Mongoid::Relations::Referenced::Many do
         end
 
         it "saves the target" do
-          rating.should_not be_new
+          rating.should_not be_new_record
         end
 
         it "adds the document to the target" do
@@ -1536,7 +1556,7 @@ describe Mongoid::Relations::Referenced::Many do
         end
 
         it "saves the target" do
-          rating.should_not be_new
+          rating.should_not be_new_record
         end
 
         it "adds the document to the target" do
@@ -2069,81 +2089,6 @@ describe Mongoid::Relations::Referenced::Many do
           end
         end
       end
-
-      context "when finding first" do
-
-        context "when there is a match" do
-
-          let(:post) do
-            person.posts.find(:first, :conditions => { :title => "Test" })
-          end
-
-          it "returns the first matching document" do
-            post.should == post_one
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:post) do
-            person.posts.find(:first, :conditions => { :title => "Testing" })
-          end
-
-          it "returns nil" do
-            post.should be_nil
-          end
-        end
-      end
-
-      context "when finding last" do
-
-        context "when there is a match" do
-
-          let(:post) do
-            person.posts.find(:last, :conditions => { :title => "OMG I has relations" })
-          end
-
-          it "returns the last matching document" do
-            post.should == post_two
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:post) do
-            person.posts.find(:last, :conditions => { :title => "Testing" })
-          end
-
-          it "returns nil" do
-            post.should be_nil
-          end
-        end
-      end
-
-      context "when finding all" do
-
-        context "when there is a match" do
-
-          let(:posts) do
-            person.posts.find(:all, :conditions => { :title => { "$exists" => true } })
-          end
-
-          it "returns the matching documents" do
-            posts.should == [ post_one, post_two ]
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:posts) do
-            person.posts.find(:all, :conditions => { :title => "Other" })
-          end
-
-          it "returns an empty array" do
-            posts.should be_empty
-          end
-        end
-      end
     end
 
     context "when the relation is polymorphic" do
@@ -2254,81 +2199,6 @@ describe Mongoid::Relations::Referenced::Many do
             it "returns an empty array" do
               ratings.should be_empty
             end
-          end
-        end
-      end
-
-      context "when finding first" do
-
-        context "when there is a match" do
-
-          let(:rating) do
-            movie.ratings.find(:first, :conditions => { :value => 1 })
-          end
-
-          it "returns the first matching document" do
-            rating.should == rating_one
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:rating) do
-            movie.ratings.find(:first, :conditions => { :value => 11 })
-          end
-
-          it "returns nil" do
-            rating.should be_nil
-          end
-        end
-      end
-
-      context "when finding last" do
-
-        context "when there is a match" do
-
-          let(:rating) do
-            movie.ratings.find(:last, :conditions => { :value => 5 })
-          end
-
-          it "returns the last matching document" do
-            rating.should == rating_two
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:rating) do
-            movie.ratings.find(:last, :conditions => { :value => 3 })
-          end
-
-          it "returns nil" do
-            rating.should be_nil
-          end
-        end
-      end
-
-      context "when finding all" do
-
-        context "when there is a match" do
-
-          let(:ratings) do
-            movie.ratings.find(:all, :conditions => { :value => { "$exists" => true } })
-          end
-
-          it "returns the matching documents" do
-            ratings.should == [ rating_one, rating_two ]
-          end
-        end
-
-        context "when there is no match" do
-
-          let(:ratings) do
-            movie.ratings.find(:all, :conditions => { :value => 7 })
-          end
-
-          it "returns an empty array" do
-            ratings.should be_empty
           end
         end
       end

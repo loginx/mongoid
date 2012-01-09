@@ -2,7 +2,13 @@ require "spec_helper"
 
 describe Mongoid::Document do
 
-  let(:klass) { Person }
+  before(:all) do
+    Doctor
+  end
+
+  let(:klass) do
+    Person
+  end
 
   let(:person) do
     Person.new
@@ -290,26 +296,6 @@ describe Mongoid::Document do
 
     it "returns the id hash" do
       person.hash.should == person.id.hash
-    end
-  end
-
-  describe "#identify" do
-
-    let!(:person) do
-      Person.new
-    end
-
-    let!(:identifier) do
-      stub
-    end
-
-    before do
-      Mongoid::Identity.expects(:new).with(person).returns(identifier)
-    end
-
-    it "creates a new identity" do
-      identifier.expects(:create)
-      person.identify
     end
   end
 

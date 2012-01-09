@@ -35,16 +35,21 @@ module Mongoid #:nodoc
     included do
       class_attribute :aliased_fields
       class_attribute :fields
-      class_attribute :non_proc_defaults
-      class_attribute :proc_defaults
+      class_attribute :pre_processed_defaults
+      class_attribute :post_processed_defaults
 
       self.aliased_fields = {}
       self.fields = {}
-      self.non_proc_defaults = []
-      self.proc_defaults = []
+      self.pre_processed_defaults = []
+      self.post_processed_defaults = []
 
-      field(:_type, :type => String)
-      field(:_id, :type => BSON::ObjectId)
+      field(:_type, default: ->{ self.class.name if hereditary? }, type: String)
+      field(
+        :_id,
+        default: ->{ BSON::ObjectId.new },
+        pre_processed: true,
+        type: BSON::ObjectId
+      )
 
       alias :id :_id
       alias :id= :_id=
@@ -53,13 +58,13 @@ module Mongoid #:nodoc
     # Apply all default values to the document which are not procs.
     #
     # @example Apply all the non-proc defaults.
-    #   model.apply_non_proc_defaults
+    #   model.apply_pre_processed_defaults
     #
     # @return [ Array<String ] The names of the non-proc defaults.
     #
     # @since 2.4.0
-    def apply_non_proc_defaults
-      non_proc_defaults.each do |name|
+    def apply_pre_processed_defaults
+      pre_processed_defaults.each do |name|
         apply_default(name)
       end
     end
@@ -67,13 +72,13 @@ module Mongoid #:nodoc
     # Apply all default values to the document which are procs.
     #
     # @example Apply all the proc defaults.
-    #   model.apply_proc_defaults
+    #   model.apply_post_processed_defaults
     #
     # @return [ Array<String ] The names of the proc defaults.
     #
     # @since 2.4.0
-    def apply_proc_defaults
-      proc_defaults.each do |name|
+    def apply_post_processed_defaults
+      post_processed_defaults.each do |name|
         apply_default(name)
       end
     end
@@ -90,8 +95,10 @@ module Mongoid #:nodoc
       unless attributes.has_key?(name)
         if field = fields[name]
           default = field.eval_default(self)
-          attribute_will_change!(name)
-          attributes[name] = default
+          unless default.nil?
+            attribute_will_change!(name)
+            attributes[name] = default
+          end
         end
       end
     end
@@ -103,20 +110,20 @@ module Mongoid #:nodoc
     #
     # @since 2.4.0
     def apply_defaults
-      apply_non_proc_defaults
-      apply_proc_defaults
+      apply_pre_processed_defaults
+      apply_post_processed_defaults
     end
 
-    # Get a list of all the default fields for the model.
+    # Is the document using object ids?
     #
-    # @example Get a list of the defaults.
-    #   model.defaults
+    # @note Refactored from using delegate for class load performance.
     #
-    # @return [ Array<String ] The names of all defaults.
+    # @example Is the document using object ids?
+    #   model.using_object_ids?
     #
-    # @since 2.4.0
-    def defaults
-      self.class.defaults
+    # @return [ true, false ] Using object ids.
+    def using_object_ids?
+      self.class.using_object_ids?
     end
 
     class << self
@@ -158,18 +165,6 @@ module Mongoid #:nodoc
 
     module ClassMethods #:nodoc
 
-      # Get a list of all the default fields for the model.
-      #
-      # @example Get a list of the defaults.
-      #   Model.defaults
-      #
-      # @return [ Array<String ] The names of all defaults.
-      #
-      # @since 2.4.0
-      def defaults
-        non_proc_defaults + proc_defaults
-      end
-
       # Defines all the fields that are accessible on the Document
       # For each field that is defined, a getter and setter will be
       # added as an instance method to the Document.
@@ -207,8 +202,8 @@ module Mongoid #:nodoc
       # @since 2.0.0.rc.6
       def inherited(subclass)
         super
-        subclass.fields, subclass.non_proc_defaults, subclass.proc_defaults =
-          fields.dup, non_proc_defaults.dup, proc_defaults.dup
+        subclass.fields, subclass.pre_processed_defaults, subclass.post_processed_defaults =
+          fields.dup, pre_processed_defaults.dup, post_processed_defaults.dup
       end
 
       # Is the field with the provided name a BSON::ObjectId?
@@ -240,8 +235,21 @@ module Mongoid #:nodoc
       #
       # @since 2.1.0
       def replace_field(name, type)
-        defaults.delete_one(name)
+        remove_defaults(name)
         add_field(name, fields[name].options.merge(:type => type))
+      end
+
+      # Convenience method for determining if we are using +BSON::ObjectIds+ as
+      # our id.
+      #
+      # @example Does this class use object ids?
+      #   person.using_object_ids?
+      #
+      # @return [ true, false ] If the class uses BSON::ObjectIds for the id.
+      #
+      # @since 1.0.0
+      def using_object_ids?
+        fields["_id"].object_id_field?
       end
 
       protected
@@ -257,11 +265,12 @@ module Mongoid #:nodoc
       # @since 2.4.0
       def add_defaults(field)
         default, name = field.default_val, field.name.to_s
+        remove_defaults(name)
         unless default.nil?
-          if field.default_val.is_a?(::Proc)
-            proc_defaults.push(name)
+          if field.pre_processed?
+            pre_processed_defaults.push(name)
           else
-            non_proc_defaults.push(name)
+            post_processed_defaults.push(name)
           end
         end
       end
@@ -393,6 +402,11 @@ module Mongoid #:nodoc
             include mod
           end
         end
+      end
+
+      def remove_defaults(name)
+        pre_processed_defaults.delete_one(name)
+        post_processed_defaults.delete_one(name)
       end
     end
   end

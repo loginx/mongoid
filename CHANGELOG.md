@@ -3,7 +3,47 @@
 For instructions on upgrading to newer versions, visit
 [mongoid.org](http://mongoid.org/docs/upgrading.html).
 
-## 2.4.0 \[ In Development \] \[ Branch: master \]
+## 3.0.0 \[ In Development \] \[ Branch: master \]
+
+### New Features
+
+### Major Changes
+
+* `Model.defaults` no longer exists. You may get all defaults with a
+  combination of `Model.pre_processed_defaults` and
+  `Model.post_processed_defaults`
+
+* `Model.identity` and `Model.key` have been removed. For custome ids,
+  users must now override the _id field like so:
+  `field :_id, type: String, default: ->{ name }`.
+
+* Custom application exceptions in various languages has been removed,
+  along with the `Mongoid.add_language` feature.
+
+* Mongoid no longer supports 1.8 syntax. 1.9.x or other vms running in
+  1.9 mode is now only supported.
+
+* \#1484 `Model#has_attribute?` now behaves the same as Active Record.
+
+* \#1342 `Model.find` and `model.relation.find` now only take a single or
+  multiple ids. The first/last/all with a conditions hash has been removed.
+
+* \#1270 Relation macros have been changed to match their AR counterparts:
+  only :has_one, :has_many, :has_and_belongs_to_many, and :belongs_to
+  exist now.
+
+* \#1268 `Model#new?` has been removed, developers must now always use
+  `Model#new_record?`.
+
+* \#933 `:field.size` has been renamed to `:field.count` in criteria for
+  $size not to conflict with Symbol's size method.
+
+### Resolved Issues
+
+* \#1335 Don't add id sorting criteria to first/last is there is already
+  sorting options on the criteria.
+
+## 2.4.0
 
 ### New Features
 

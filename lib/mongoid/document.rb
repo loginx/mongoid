@@ -97,16 +97,6 @@ module Mongoid #:nodoc:
       attributes["_id"].hash
     end
 
-    # Generate an id for this +Document+.
-    #
-    # @example Create the id.
-    #   person.identify
-    #
-    # @return [ BSON::ObjectId, String ] A newly created id.
-    def identify
-      Identity.new(self).create
-    end
-
     # Instantiate a new +Document+, setting the Document's attributes if
     # given. If no attributes are provided, they will be initialized with
     # an empty +Hash+.
@@ -127,13 +117,11 @@ module Mongoid #:nodoc:
         @new_record = true
         @attributes ||= {}
         options ||= {}
-        apply_non_proc_defaults
-        identify if using_object_ids?
+        apply_pre_processed_defaults
         process(attrs, options[:as] || :default, !options[:without_protection]) do
-          identify unless using_object_ids?
           yield(self) if block_given?
         end
-        apply_proc_defaults
+        apply_post_processed_defaults
         run_callbacks(:initialize) { self }
       end
     end

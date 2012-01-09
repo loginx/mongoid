@@ -35,11 +35,21 @@ describe Mongoid::Criterion::Inclusion do
       context "when not using object ids" do
 
         before(:all) do
-          Person.identity :type => String
+          Person.field(
+            :_id,
+            type: String,
+            pre_processed: true,
+            default: ->{ BSON::ObjectId.new.to_s }
+          )
         end
 
         after(:all) do
-          Person.identity :type => BSON::ObjectId
+          Person.field(
+            :_id,
+            type: BSON::ObjectId,
+            pre_processed: true,
+            default: ->{ BSON::ObjectId.new }
+          )
         end
 
         let!(:person) do
@@ -858,7 +868,7 @@ describe Mongoid::Criterion::Inclusion do
       end
 
       it "typecasts size criterion to integer" do
-        Person.where(:aliases.size => "2").should == [ person ]
+        Person.where(:aliases.count => "2").should == [ person ]
       end
 
       it "typecasts exists criterion to boolean" do
@@ -966,7 +976,7 @@ describe Mongoid::Criterion::Inclusion do
       context "#size" do
 
         it "returns those matching a size clause" do
-          Person.where(:aliases.size => 2).should == [person]
+          Person.where(:aliases.count => 2).should == [person]
         end
       end
 
