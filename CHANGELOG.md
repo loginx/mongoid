@@ -43,6 +43,25 @@ For instructions on upgrading to newer versions, visit
 * \#1335 Don't add id sorting criteria to first/last is there is already
   sorting options on the criteria.
 
+## 2.4.1 \[ In Development \] \[ Branch: 2.4.0-stable \]
+
+### Resolved Issues
+
+* \#1579 Don't call #to_a on individual set field elements in criterion.
+
+* \#1576 Don't hit database on uniqueness validation if the field getting
+  validated has not changed.
+
+* \#1571 Aliased fields get all the dirty attribute methods and all getters and
+  setters for both the original name and the alias. (Hans Hasselberg)
+
+* \#1568 Fallback to development environment with warning when no env configured.
+
+* \#1557 Internal strategy class no longer conflicts with models.
+
+* \#1547 Resetting persisted children from a parent save when new waits until post
+  callbacks, mirroring update functionality.
+
 ## 2.4.0
 
 ### New Features
